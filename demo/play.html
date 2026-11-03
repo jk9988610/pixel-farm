@@ -38,6 +38,22 @@
     background: rgba(0,0,0,0.85); padding: 6px;
     display: none; z-index: 20; line-height: 1.5;
   }
+  #levelup {
+    position: fixed; inset: 0; z-index: 30;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: rgba(0,0,0,0.72);
+  }
+  .lu-title { color: #ffd166; font-size: 20px; text-shadow: 2px 2px 0 #000; }
+  .lu-cards { display: flex; gap: 14px; }
+  .lu-card {
+    width: 120px; padding: 16px 10px; text-align: center;
+    background: #1c2430; border: 2px solid #7df9ff; border-radius: 6px;
+    color: #fff; font-size: 14px; cursor: pointer;
+  }
+  .lu-card:hover { background: #2a3648; transform: translateY(-3px); }
+  .lu-card .ico { font-size: 24px; display: block; margin-bottom: 8px; }
+  .lu-hint { color: #8899aa; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -50,6 +66,7 @@
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
 <div id="err"></div>
+<div id="levelup"></div>
 
 <script type="module">
 // 全局错误显示
@@ -133,6 +150,7 @@ let enemies = [];
 let bullets = [];
 let particles = [];
 let floats = [];
+let gems = [];
 let camX = 0, camY = 0;
 let gameTime = 0;
 let kills = 0;
@@ -168,6 +186,8 @@ class Player {
     this.dmg = 8;
     this.atkSpeed = 0.5;
     this.projSpeed = 220;
+    this.projCount = 1;   // 多弹道增益
+    this.pierce = 0;      // 穿透增益
     this.atkTimer = 0;
     this.iframe = 0;
     this.facing = 'down';
@@ -280,13 +300,18 @@ class Player {
         if (d < tD && d < ATTACK_RANGE) { tD = d; target = e; }
       }
       if (target) {
-        const l = Math.hypot(target.x - this.x, target.y - this.y) || 1;
-        bullets.push({
-          x: this.x, y: this.y - 12,
-          vx: (target.x - this.x) / l * this.projSpeed,
-          vy: (target.y - this.y) / l * this.projSpeed,
-          dmg: this.dmg, life: 1.5, dead: false,
-        });
+        const baseA = Math.atan2(target.y - this.y, target.x - this.x);
+        const n = this.projCount;
+        for (let i = 0; i < n; i++) {
+          // 多弹道: 围绕目标方向扇形散开
+          const a = baseA + (i - (n - 1) / 2) * 0.12;
+          bullets.push({
+            x: this.x, y: this.y - 12,
+            vx: Math.cos(a) * this.projSpeed,
+            vy: Math.sin(a) * this.projSpeed,
+            dmg: this.dmg, life: 1.5, pierce: this.pierce, hits: null, dead: false,
+          });
+        }
         this.atkTimer = this.atkSpeed;
       } else {
         this.atkTimer = 0.1;
@@ -389,6 +414,35 @@ function spawnEnemy() {
   });
 }
 
+// ===== 经验宝石 (敌人死亡掉落, 靠近吸附, 拾取攒经验) =====
+const GEM_MAGNET_R = 90;   // 吸附半径
+const GEM_PICK_R = 10;     // 拾取半径
+function spawnGem(x, y, value) {
+  gems.push({ x, y, value, bob: Math.random() * Math.PI * 2, vx: 0, vy: 0 });
+}
+function updateGems(dt) {
+  for (const g of gems) {
+    const dx = player.x - g.x, dy = player.y - g.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d < GEM_PICK_R) {
+      g.dead = true;
+      // 升级则暂停弹三选一; 已在选卡界面时攒着, 选完下颗宝石再触发
+      if (gainXp(g.value) > 0 && gameState === 'playing') showLevelUp();
+      popText(g.x, g.y - 10, '+' + g.value, '#7df9ff');
+    } else if (d < GEM_MAGNET_R) {
+      // 越近吸得越快
+      const pull = 260 * (1 - d / GEM_MAGNET_R) + 60;
+      g.vx += dx / d * pull * dt * 6;
+      g.vy += dy / d * pull * dt * 6;
+    }
+    g.vx *= 0.9; g.vy *= 0.9;
+    g.x += g.vx * dt;
+    g.y += g.vy * dt;
+    g.bob += dt * 4;
+  }
+  gems = gems.filter(g => !g.dead);
+}
+
 // ===== 粒子/飘字 =====
 function burst(x, y, color, n) {
   for (let i = 0; i < n; i++) {
@@ -420,6 +474,7 @@ function reset() {
   bullets = [];
   particles = [];
   floats = [];
+  gems = [];
   gameTime = 0;
   kills = 0;
   level = 1;
@@ -435,19 +490,63 @@ function reset() {
   updateHud();
 }
 
+// ===== 升级三选一 (升级暂停弹卡, AI 1.2s 后自动选, 也可点击) =====
+const UPGRADES = [
+  { id: 'dmg',    ico: '⚔', name: '攻击 +2',   apply: p => p.dmg += 2 },
+  { id: 'speed',  ico: '👟', name: '移速 +15',  apply: p => p.speed += 15 },
+  { id: 'hp',     ico: '♥', name: '血量 +25',  apply: p => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
+  { id: 'rate',   ico: '⚡', name: '射速 +15%', apply: p => p.atkSpeed = Math.max(0.12, p.atkSpeed * 0.85) },
+  { id: 'multi',  ico: '☄', name: '弹道 +1',   apply: p => p.projCount += 1 },
+  { id: 'pierce', ico: '➹', name: '穿透 +1',   apply: p => p.pierce += 1 },
+];
+// AI 选卡偏好: 弹道/穿透优先, 残血优先补血
+function aiPickCard(cards) {
+  const pref = { multi: 6, pierce: 5, dmg: 4, rate: 3, speed: 1, hp: player.hp < player.maxHp * 0.5 ? 7 : 2 };
+  let best = cards[0];
+  for (const c of cards) if ((pref[c.id] || 0) > (pref[best.id] || 0)) best = c;
+  return best;
+}
+let levelupTimer = 0;
+function showLevelUp() {
+  gameState = 'levelup';
+  levelupTimer = 1.2;
+  const pool = [...UPGRADES];
+  const cards = [];
+  for (let i = 0; i < 3; i++) cards.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  const box = $('levelup');
+  box.innerHTML = '<div class="lu-title">LEVEL UP 三选一</div><div class="lu-cards"></div><div class="lu-hint">AI 自动选择中...</div>';
+  const row = box.querySelector('.lu-cards');
+  for (const c of cards) {
+    const d = document.createElement('div');
+    d.className = 'lu-card';
+    d.innerHTML = `<span class="ico">${c.ico}</span>${c.name}`;
+    d.onclick = () => pickUpgrade(c);
+    row.appendChild(d);
+  }
+  box._cards = cards;
+  box.style.display = 'flex';
+}
+function pickUpgrade(c) {
+  c.apply(player);
+  popText(player.x, player.y - 30, c.name, '#7df9ff');
+  $('levelup').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+}
+
 // ===== 升级 =====
 function gainXp(n) {
   xp += n;
+  let ups = 0;
   while (xp >= xpNext) {
     xp -= xpNext;
     level++;
+    ups++;
     xpNext = Math.floor(xpNext * 1.5);
-    player.maxHp += 15;
-    player.hp = Math.min(player.maxHp, player.hp + 30);
-    player.dmg += 2;
     popText(player.x, player.y - 30, 'LEVEL UP', '#ffd166');
-    updateHud();
   }
+  updateHud();
+  return ups;
 }
 
 // ===== 主循环 =====
@@ -464,6 +563,15 @@ function loop(t) {
       deadTimer -= dt;
       if (deadTimer <= 0) reset();
       render();
+      return;
+    }
+
+    // 选卡暂停: 只渲染 + AI 倒计时自动选
+    if (gameState === 'levelup') {
+      levelupTimer -= dt;
+      if (levelupTimer <= 0) pickUpgrade(aiPickCard($('levelup')._cards));
+      render();
+      updateHud();
       return;
     }
 
@@ -501,22 +609,30 @@ function loop(t) {
       if (b.life <= 0) { b.dead = true; continue; }
       for (const e of enemies) {
         if (e.dead) continue;
+        if (b.hits && b.hits.has(e)) continue;   // 穿透弹不重复打同一敌人
         if (Math.hypot(b.x - e.x, b.y - e.y) < e.size + 3) {
           e.hp -= b.dmg;
-          b.dead = true;
           burst(b.x, b.y, e.color, 3);
+          if (b.pierce > 0) {
+            b.pierce--;
+            (b.hits || (b.hits = new Set())).add(e);
+          } else {
+            b.dead = true;
+          }
           if (e.hp <= 0) {
             e.dead = true;
             kills++;
             burst(e.x, e.y, e.color, 8);
-            gainXp(e.xp);
+            spawnGem(e.x, e.y, e.xp);
           }
-          break;
+          if (b.dead) break;
         }
       }
     }
     bullets = bullets.filter(b => !b.dead && b.life > 0);
     enemies = enemies.filter(e => !e.dead);
+
+    updateGems(dt);
 
     // 粒子
     for (const p of particles) {
@@ -591,6 +707,22 @@ function render() {
       ctx.fillStyle = '#f66';
       ctx.fillRect(sx - bw/2, sy - e.size * 2 - 4, bw * (e.hp/e.maxHp), 2);
     }
+  }
+
+  // 经验宝石: 青色菱形, 上下浮动, 价值越高越大
+  for (const g of gems) {
+    const sx = g.x - camX, sy = g.y - camY + Math.sin(g.bob) * 2;
+    const r = Math.min(6, 2.5 + g.value * 0.4);
+    ctx.fillStyle = '#7df9ff';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - r);
+    ctx.lineTo(sx + r * 0.7, sy);
+    ctx.lineTo(sx, sy + r);
+    ctx.lineTo(sx - r * 0.7, sy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(sx - 1, sy - r * 0.5, 1.5, 1.5);
   }
 
   // 子弹
