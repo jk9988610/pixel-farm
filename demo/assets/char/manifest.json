@@ -1,0 +1,195 @@
+{
+  "generated": "2026-11-03 19:10:48",
+  "characters": {
+    "child": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ]
+      }
+    },
+    "elder": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ]
+      }
+    },
+    "girl": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ]
+      }
+    },
+    "merchant": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ]
+      }
+    },
+    "villager": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ]
+      }
+    }
+  }
+}

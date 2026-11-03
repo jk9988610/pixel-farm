@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>像素田园 · 素材画廊</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --wood-dark: #5a3a1a;
+    --wood: #8b5a2b;
+    --wood-light: #a8703c;
+    --paper: #f4e8c1;
+    --paper-dark: #e8d8a8;
+    --ink: #3a2410;
+    --accent: #c0392b;
+    --green: #6a9955;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: 'Press Start 2P', 'Courier New', monospace;
+    background: var(--paper);
+    color: var(--ink);
+    image-rendering: pixelated;
+  }
+
+  /* 顶栏 */
+  header {
+    background: var(--wood-dark);
+    color: var(--paper);
+    padding: 20px 24px 16px;
+    border-bottom: 4px solid var(--wood);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: 1px;
+    text-shadow: 2px 2px 0 var(--ink);
+  }
+  h1 .sub {
+    font-size: 9px;
+    opacity: 0.7;
+    margin-left: 12px;
+    font-weight: normal;
+  }
+  nav {
+    display: flex;
+    gap: 8px;
+  }
+  nav button {
+    font-family: inherit;
+    font-size: 10px;
+    padding: 8px 14px;
+    background: var(--wood);
+    color: var(--paper);
+    border: 2px solid var(--wood-dark);
+    border-radius: 0;
+    cursor: pointer;
+    box-shadow: inset -2px -2px 0 rgba(0,0,0,0.25), inset 2px 2px 0 rgba(255,255,255,0.15);
+  }
+  nav button:hover { background: var(--wood-light); }
+  nav button.active {
+    background: var(--accent);
+    border-color: #7a1a10;
+  }
+
+  /* 网格 */
+  main {
+    padding: 28px 24px 80px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .section-title {
+    font-size: 12px;
+    color: var(--wood-dark);
+    margin: 28px 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 3px dashed var(--wood-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .section-title .count {
+    font-size: 9px;
+    color: var(--wood);
+    opacity: 0.8;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--paper-dark);
+    border: 3px solid var(--wood-dark);
+    padding: 12px 8px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+    position: relative;
+    box-shadow: 3px 3px 0 var(--wood);
+  }
+  .card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0 var(--accent);
+  }
+  .card .preview {
+    height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      repeating-conic-gradient(#d8c898 0 25%, #e8d8a8 0 50%) 0 0 / 12px 12px;
+    border: 2px inset var(--wood-light);
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .card .preview img {
+    image-rendering: pixelated;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .card .name {
+    font-size: 8px;
+    color: var(--ink);
+    word-break: break-all;
+  }
+  .card .meta {
+    font-size: 7px;
+    color: var(--wood);
+    margin-top: 4px;
+    opacity: 0.8;
+  }
+
+  /* 空状态 */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--wood);
+    font-size: 10px;
+    line-height: 2;
+  }
+
+  /* 底栏 */
+  footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--wood-dark);
+    color: var(--paper);
+    padding: 10px 24px;
+    font-size: 9px;
+    border-top: 3px solid var(--wood);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* 弹层 */
+  .modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal.show { display: flex; }
+  .modal-body {
+    background: var(--paper);
+    border: 4px solid var(--wood-dark);
+    padding: 20px;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: 8px 8px 0 var(--ink);
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+    gap: 20px;
+  }
+  .modal-title {
+    font-size: 13px;
+    color: var(--wood-dark);
+  }
+  .modal-close {
+    font-family: inherit;
+    font-size: 10px;
+    background: var(--accent);
+    color: var(--paper);
+    border: 2px solid #7a1a10;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .modal-stage {
+    background: repeating-conic-gradient(#d8c898 0 25%, #e8d8a8 0 50%) 0 0 / 16px 16px;
+    border: 2px inset var(--wood-light);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    margin-bottom: 16px;
+  }
+  .modal-stage img {
+    image-rendering: pixelated;
+    display: block;
+  }
+  .zoom-controls {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .zoom-controls button {
+    font-family: inherit;
+    font-size: 9px;
+    padding: 5px 10px;
+    background: var(--paper-dark);
+    border: 2px solid var(--wood);
+    cursor: pointer;
+  }
+  .zoom-controls button.active {
+    background: var(--accent);
+    color: var(--paper);
+  }
+  .modal-meta {
+    font-size: 9px;
+    color: var(--wood-dark);
+    line-height: 1.8;
+  }
+  .modal-meta a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>像素田园<span class="sub">PIXEL FARM · 素材画廊</span></h1>
+  <nav id="tabs">
+    <button data-cat="all" class="active">全部</button>
+    <button data-cat="角色">角色</button>
+    <button data-cat="背景">背景</button>
+    <button data-cat="花卉">花卉</button>
+  </nav>
+</header>
+
+<main id="main"></main>
+
+<footer>
+  <span id="stats">加载中...</span>
+  <span>点击卡片查看大图 · 右键另存</span>
+</footer>
+
+<div class="modal" id="modal">
+  <div class="modal-body">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">—</div>
+      <button class="modal-close" id="modalClose">关闭 ✕</button>
+    </div>
+    <div class="zoom-controls" id="zoomBtns">
+      <button data-z="1">1×</button>
+      <button data-z="2">2×</button>
+      <button data-z="4" class="active">4×</button>
+      <button data-z="8">8×</button>
+      <button data-z="16">16×</button>
+    </div>
+    <div class="modal-stage">
+      <img id="modalImg" src="" alt="">
+    </div>
+    <div class="modal-meta" id="modalMeta"></div>
+  </div>
+</div>
+
+<script>
+const CATEGORY_ORDER = ['角色', '背景', '花卉'];
+let manifest = null;
+let currentCat = 'all';
+let currentItem = null;
+let currentZoom = 4;
+
+async function loadManifest() {
+  const r = await fetch('assets/sv/manifest.json');
+  manifest = await r.json();
+  document.getElementById('stats').textContent =
+    `共 ${manifest.total} 个素材 · 生成于 ${manifest.generated}`;
+  render();
+}
+
+function render() {
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+
+  const cats = currentCat === 'all' ? CATEGORY_ORDER : [currentCat];
+  for (const cat of cats) {
+    const items = manifest.categories[cat] || [];
+    const title = document.createElement('div');
+    title.className = 'section-title';
+    title.innerHTML = `<span>${cat}</span><span class="count">${items.length} 个</span>`;
+    main.appendChild(title);
+
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '这个分类还没有素材 · 用 Aseprite 画好放进 assets/sv/ 后重跑 gen_manifest';
+      main.appendChild(empty);
+      continue;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const it of items) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="preview"><img src="assets/sv/${it.file}" alt="${it.name}"></div>
+        <div class="name">${it.name}</div>
+        <div class="meta">${it.w}×${it.h}</div>
+      `;
+      card.addEventListener('click', () => openModal(it));
+      grid.appendChild(card);
+    }
+    main.appendChild(grid);
+  }
+}
+
+function openModal(item) {
+  currentItem = item;
+  document.getElementById('modalTitle').textContent = item.name;
+  document.getElementById('modalMeta').innerHTML =
+    `文件: ${item.file}<br>` +
+    `尺寸: ${item.w} × ${item.h} px<br>` +
+    `大小: ${item.bytes} 字节<br>` +
+    `分类: ${item.category}<br>` +
+    `<a href="assets/sv/${item.file}" download>下载原图</a>`;
+  document.getElementById('modal').classList.add('show');
+  applyZoom();
+}
+
+function applyZoom() {
+  const img = document.getElementById('modalImg');
+  if (!currentItem) return;
+  img.src = `assets/sv/${currentItem.file}`;
+  img.style.width = (currentItem.w * currentZoom) + 'px';
+  img.style.height = (currentItem.h * currentZoom) + 'px';
+  document.querySelectorAll('#zoomBtns button').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.z) === currentZoom);
+  });
+}
+
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  currentCat = b.dataset.cat;
+  render();
+});
+
+document.getElementById('zoomBtns').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  currentZoom = parseInt(b.dataset.z);
+  applyZoom();
+});
+
+document.getElementById('modalClose').addEventListener('click', () => {
+  document.getElementById('modal').classList.remove('show');
+});
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target.id === 'modal') {
+    document.getElementById('modal').classList.remove('show');
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('modal').classList.remove('show');
+});
+
+loadManifest().catch(err => {
+  document.getElementById('main').innerHTML =
+    `<div class="empty">加载失败: ${err.message}<br>确认 assets/sv/manifest.json 存在</div>`;
+});
+</script>
+</body>
+</html>

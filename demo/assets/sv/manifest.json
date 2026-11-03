@@ -1,0 +1,76 @@
+{
+  "site": "像素田园",
+  "generated": "2026-11-03 09:23:02",
+  "total": 8,
+  "categories": {
+    "角色": [],
+    "背景": [
+      {
+        "name": "cloud",
+        "file": "cloud.png",
+        "w": 32,
+        "h": 16,
+        "bytes": 152,
+        "category": "背景"
+      },
+      {
+        "name": "ground_tile",
+        "file": "ground_tile.png",
+        "w": 32,
+        "h": 32,
+        "bytes": 576,
+        "category": "背景"
+      },
+      {
+        "name": "hills_far",
+        "file": "hills_far.png",
+        "w": 512,
+        "h": 160,
+        "bytes": 1033,
+        "category": "背景"
+      },
+      {
+        "name": "hills_mid",
+        "file": "hills_mid.png",
+        "w": 512,
+        "h": 160,
+        "bytes": 948,
+        "category": "背景"
+      }
+    ],
+    "花卉": [
+      {
+        "name": "flower_blue",
+        "file": "flower_blue.png",
+        "w": 8,
+        "h": 8,
+        "bytes": 119,
+        "category": "花卉"
+      },
+      {
+        "name": "flower_pink",
+        "file": "flower_pink.png",
+        "w": 8,
+        "h": 8,
+        "bytes": 115,
+        "category": "花卉"
+      },
+      {
+        "name": "flower_red",
+        "file": "flower_red.png",
+        "w": 8,
+        "h": 8,
+        "bytes": 119,
+        "category": "花卉"
+      },
+      {
+        "name": "flower_yellow",
+        "file": "flower_yellow.png",
+        "w": 8,
+        "h": 8,
+        "bytes": 119,
+        "category": "花卉"
+      }
+    ]
+  }
+}
