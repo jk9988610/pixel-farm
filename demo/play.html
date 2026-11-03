@@ -148,6 +148,7 @@ async function loadAllChars() {
 let player = null;
 let enemies = [];
 let bullets = [];
+let ebullets = [];   // 敌方弹幕
 let particles = [];
 let floats = [];
 let gems = [];
@@ -384,12 +385,16 @@ class Player {
 }
 
 // ===== 敌人 =====
+// kind: chase 追击(默认) / charger 冲刺球 / splitter 分裂球 / shooter 远程弹幕球
 const ENEMY_TYPES = [
   { color: '#e33', hp: 10, speed: 45, size: 6, dmg: 8, xp: 1 },
   { color: '#f80', hp: 15, speed: 55, size: 7, dmg: 10, xp: 2 },
   { color: '#f0f', hp: 22, speed: 38, size: 8, dmg: 12, xp: 3 },
   { color: '#3cf', hp: 35, speed: 32, size: 10, dmg: 15, xp: 5 },
   { color: '#ff0', hp: 70, speed: 26, size: 13, dmg: 20, xp: 10 },
+  { kind: 'charger',  color: '#ff5da2', hp: 18, speed: 30, size: 7, dmg: 14, xp: 4 },
+  { kind: 'splitter', color: '#8fe040', hp: 20, speed: 36, size: 9, dmg: 10, xp: 4 },
+  { kind: 'shooter',  color: '#9d6bff', hp: 16, speed: 28, size: 7, dmg: 8,  xp: 5 },
 ];
 
 function pickType() {
@@ -398,6 +403,9 @@ function pickType() {
   if (gameTime > 30) maxI = 2;
   if (gameTime > 60) maxI = 3;
   if (gameTime > 90) maxI = 4;
+  if (gameTime > 100) maxI = 5;   // 冲刺球
+  if (gameTime > 120) maxI = 6;   // 分裂球
+  if (gameTime > 140) maxI = 7;   // 弹幕球
   return ENEMY_TYPES[Math.floor(Math.random() * (maxI + 1))];
 }
 
@@ -411,8 +419,22 @@ function spawnEnemy() {
     hp: t.hp, maxHp: t.hp,
     speed: t.speed, size: t.size,
     dmg: t.dmg, xp: t.xp, color: t.color,
+    kind: t.kind || 'chase',
     wobble: Math.random() * Math.PI * 2,
     flash: 0,   // 命中闪白计时
+    mode: 'walk', modeT: 0, dvx: 0, dvy: 0,   // charger 状态机
+    shootT: 1 + Math.random() * 1.5,          // shooter 开火计时
+    dead: false,
+  });
+}
+
+// 分裂球死后爆出的小球
+function spawnMini(x, y, color) {
+  enemies.push({
+    x: x + (Math.random() - 0.5) * 10, y: y + (Math.random() - 0.5) * 10,
+    hp: 6, maxHp: 6, speed: 60, size: 4, dmg: 5, xp: 1, color,
+    kind: 'chase', wobble: 0, flash: 0,
+    mode: 'walk', modeT: 0, dvx: 0, dvy: 0, shootT: 0,
     dead: false,
   });
 }
@@ -482,6 +504,7 @@ function reset() {
 
   enemies = [];
   bullets = [];
+  ebullets = [];
   particles = [];
   floats = [];
   gems = [];
@@ -605,12 +628,61 @@ function loop(t) {
       if (e.dead) continue;
       const dx = player.x - e.x, dy = player.y - e.y;
       const d = Math.hypot(dx, dy) || 1;
-      e.x += dx / d * e.speed * dt;
-      e.y += dy / d * e.speed * dt;
+      if (e.kind === 'charger') {
+        // 冲刺球: 靠近 -> 蓄力(闪白停顿) -> 高速直线冲刺 -> 回到追击
+        e.modeT -= dt;
+        if (e.mode === 'walk') {
+          e.x += dx / d * e.speed * dt;
+          e.y += dy / d * e.speed * dt;
+          if (d < 140) { e.mode = 'windup'; e.modeT = 0.5; }
+        } else if (e.mode === 'windup') {
+          e.flash = 0.05;   // 蓄力发白预警
+          if (e.modeT <= 0) {
+            e.mode = 'dash'; e.modeT = 0.5;
+            e.dvx = dx / d; e.dvy = dy / d;
+          }
+        } else {   // dash
+          e.x += e.dvx * e.speed * 4 * dt;
+          e.y += e.dvy * e.speed * 4 * dt;
+          if (e.modeT <= 0) e.mode = 'walk';
+        }
+      } else if (e.kind === 'shooter') {
+        // 弹幕球: 保持 120-170 距离环绕, 每 2.2s 向玩家发一颗弹
+        if (d > 170) { e.x += dx / d * e.speed * dt; e.y += dy / d * e.speed * dt; }
+        else if (d < 120) { e.x -= dx / d * e.speed * 0.7 * dt; e.y -= dy / d * e.speed * 0.7 * dt; }
+        else {
+          // 侧向环绕
+          e.x += -dy / d * e.speed * 0.5 * dt;
+          e.y += dx / d * e.speed * 0.5 * dt;
+        }
+        e.shootT -= dt;
+        if (e.shootT <= 0 && d < 260) {
+          e.shootT = 2.2;
+          ebullets.push({ x: e.x, y: e.y, vx: dx / d * 130, vy: dy / d * 130, dmg: e.dmg, life: 3, dead: false });
+        }
+      } else {
+        // chase / splitter: 直线追击
+        e.x += dx / d * e.speed * dt;
+        e.y += dy / d * e.speed * dt;
+      }
       e.wobble += dt * 8;
-      if (e.flash > 0) e.flash -= dt;
+      if (e.flash > 0 && e.mode !== 'windup') e.flash -= dt;
       if (d < e.size + 6) player.takeDamage(e.dmg);
     }
+
+    // 敌方弹幕
+    for (const b of ebullets) {
+      if (b.dead) continue;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.life -= dt;
+      if (b.life <= 0) { b.dead = true; continue; }
+      if (Math.hypot(b.x - player.x, b.y - player.y) < 8) {
+        b.dead = true;
+        player.takeDamage(b.dmg);
+      }
+    }
+    ebullets = ebullets.filter(b => !b.dead);
 
     // 子弹
     for (const b of bullets) {
@@ -643,6 +715,10 @@ function loop(t) {
             burst(e.x, e.y, e.color, 8);
             addShake(0.12, 2.5);
             spawnGem(e.x, e.y, e.xp);
+            if (e.kind === 'splitter') {   // 分裂球死后爆出 2 个小球
+              spawnMini(e.x, e.y, e.color);
+              spawnMini(e.x, e.y, e.color);
+            }
           }
           if (b.dead) break;
         }
@@ -764,6 +840,16 @@ function render() {
     ctx.beginPath();
     ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // 敌方弹幕: 紫色圆点带白芯
+  for (const b of ebullets) {
+    const sx = b.x - camX, sy = b.y - camY;
+    ctx.fillStyle = '#c080ff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(sx - 1, sy - 1, 2, 2);
   }
 
   // 玩家
