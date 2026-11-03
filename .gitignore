@@ -91,3 +91,8 @@ eslint.config.mjs
 LICENSE
 README.md
 *.log
+
+# 本地临时
+play-dist.zip
+*.zip
+skills/
