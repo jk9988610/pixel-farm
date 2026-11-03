@@ -191,6 +191,9 @@ class Player {
     this.pierce = 0;      // 穿透增益
     this.critChance = 0.15;  // 暴击率
     this.critMul = 2;        // 暴击倍率
+    this.knives = 0;     // 环绕飞刀数量
+    this.boomerang = 0;  // 回旋镖等级
+    this.laser = 0;      // 激光等级
     this.atkTimer = 0;
     this.iframe = 0;
     this.facing = 'down';
@@ -439,6 +442,138 @@ function spawnMini(x, y, color) {
   });
 }
 
+// ===== 武器系统 (基础子弹之外: 环绕飞刀/回旋镖/激光, 经升级卡获得) =====
+let knifeAngle = 0;
+let boomT = 0, laserT = 0;
+let booms = [];   // 回旋镖
+let beams = [];   // 激光光束(纯视觉)
+
+// 通用击杀: 掉宝石/分裂/震屏
+function killEnemy(e) {
+  if (e.dead) return;
+  e.dead = true;
+  kills++;
+  burst(e.x, e.y, e.color, 8);
+  addShake(0.12, 2.5);
+  spawnGem(e.x, e.y, e.xp);
+  if (e.kind === 'splitter') {
+    spawnMini(e.x, e.y, e.color);
+    spawnMini(e.x, e.y, e.color);
+  }
+}
+// 武器通用伤害: 掷暴击 + 飘字 + 闪白 + 击杀
+function weaponHit(e, base, burstN) {
+  const crit = Math.random() < player.critChance;
+  const dmg = Math.round(base * (crit ? player.critMul : 1));
+  e.hp -= dmg;
+  e.flash = 0.08;
+  burst(e.x, e.y, e.color, burstN || 2);
+  popText(e.x, e.y - e.size * 2 - 4, String(dmg), crit ? '#ffb020' : '#ffffff', crit ? 13 : 9);
+  if (e.hp <= 0) killEnemy(e);
+}
+function nearestEnemyTo(x, y, maxD) {
+  let best = null, bd = maxD;
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - x, e.y - y);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+// 点到线段距离 (激光判定用)
+function distToSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx * dx + dy * dy || 1;
+  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+// 飞刀第 i 把的位置
+function knifePos(i, n) {
+  const a = knifeAngle + i * Math.PI * 2 / n;
+  return [player.x + Math.cos(a) * 45, player.y + Math.sin(a) * 45];
+}
+function updateWeapons(dt) {
+  // 环绕飞刀: 每把对接触敌人造成伤害, 同一敌人 0.4s 内只吃一次
+  if (player.knives > 0) {
+    knifeAngle += dt * 3.2;
+    for (let i = 0; i < player.knives; i++) {
+      const [kx, ky] = knifePos(i, player.knives);
+      for (const e of enemies) {
+        if (e.dead || (e.knifeCd || 0) > 0) continue;
+        if (Math.hypot(e.x - kx, e.y - ky) < e.size + 6) {
+          e.knifeCd = 0.4;
+          weaponHit(e, 4 + player.dmg * 0.5);
+        }
+      }
+    }
+  }
+  for (const e of enemies) if (e.knifeCd > 0) e.knifeCd -= dt;
+
+  // 回旋镖: 飞出 150px 折返, 每敌人一次投掷只吃一次, 等级缩短冷却
+  if (player.boomerang > 0) {
+    boomT -= dt;
+    if (boomT <= 0) {
+      const t = nearestEnemyTo(player.x, player.y, 400);
+      if (t) {
+        boomT = Math.max(1.2, 3 - player.boomerang * 0.3);
+        booms.push({
+          x: player.x, y: player.y - 12,
+          a: Math.atan2(t.y - player.y, t.x - player.x),
+          dist: 0, spin: 0,
+          dmg: Math.round(player.dmg * (1 + 0.3 * (player.boomerang - 1))),
+          hits: new Set(), dead: false,
+        });
+      } else boomT = 0.3;
+    }
+  }
+  for (const b of booms) {
+    if (b.dead) continue;
+    const sp = 260;
+    b.spin += dt * 12;
+    if (b.dist < 150) {
+      b.x += Math.cos(b.a) * sp * dt;
+      b.y += Math.sin(b.a) * sp * dt;
+      b.dist += sp * dt;
+    } else {
+      const dx = player.x - b.x, dy = (player.y - 12) - b.y;
+      const d = Math.hypot(dx, dy) || 1;
+      b.x += dx / d * sp * dt;
+      b.y += dy / d * sp * dt;
+      if (d < 10) { b.dead = true; continue; }
+    }
+    for (const e of enemies) {
+      if (e.dead || b.hits.has(e)) continue;
+      if (Math.hypot(e.x - b.x, e.y - b.y) < e.size + 5) {
+        b.hits.add(e);
+        weaponHit(e, b.dmg);
+      }
+    }
+  }
+  booms = booms.filter(b => !b.dead);
+
+  // 激光: 瞬发光束, 对线上所有敌人造成伤害, 等级缩短冷却
+  if (player.laser > 0) {
+    laserT -= dt;
+    if (laserT <= 0) {
+      const t = nearestEnemyTo(player.x, player.y, 500);
+      if (t) {
+        laserT = Math.max(1.5, 4 - player.laser * 0.4);
+        const x1 = player.x, y1 = player.y - 12;
+        const dmg = Math.round(player.dmg * (1.5 + 0.3 * (player.laser - 1)));
+        for (const e of enemies) {
+          if (e.dead) continue;
+          if (distToSeg(e.x, e.y, x1, y1, t.x, t.y) < e.size + 4) weaponHit(e, dmg, 3);
+        }
+        beams.push({ x1, y1, x2: t.x, y2: t.y, ttl: 0.2, max: 0.2 });
+        addShake(0.08, 1.5);
+      } else laserT = 0.3;
+    }
+  }
+  for (const bm of beams) bm.ttl -= dt;
+  beams = beams.filter(b => b.ttl > 0);
+}
+
 // ===== 经验宝石 (敌人死亡掉落, 靠近吸附, 拾取攒经验) =====
 const GEM_MAGNET_R = 90;   // 吸附半径
 const GEM_PICK_R = 10;     // 拾取半径
@@ -510,6 +645,9 @@ function reset() {
   gems = [];
   gameTime = 0;
   kills = 0;
+  knifeAngle = 0; boomT = 0; laserT = 0;
+  booms = [];
+  beams = [];
   level = 1;
   xp = 0;
   xpNext = 10;
@@ -532,10 +670,13 @@ const UPGRADES = [
   { id: 'rate',   ico: '⚡', name: '射速 +15%', apply: p => p.atkSpeed = Math.max(0.12, p.atkSpeed * 0.85) },
   { id: 'multi',  ico: '☄', name: '弹道 +1',   apply: p => p.projCount += 1 },
   { id: 'pierce', ico: '➹', name: '穿透 +1',   apply: p => p.pierce += 1 },
+  { id: 'knife',  ico: '🌀', name: '飞刀 +1',   apply: p => p.knives += 1 },
+  { id: 'boomer', ico: '🪃', name: '回旋镖',    apply: p => p.boomerang += 1 },
+  { id: 'laser',  ico: '🔦', name: '激光',      apply: p => p.laser += 1 },
 ];
-// AI 选卡偏好: 弹道/穿透优先, 残血优先补血
+// AI 选卡偏好: 新武器/弹道/穿透优先, 其次攻击/射速, 残血优先补血
 function aiPickCard(cards) {
-  const pref = { multi: 6, pierce: 5, dmg: 4, rate: 3, speed: 1, hp: player.hp < player.maxHp * 0.5 ? 7 : 2 };
+  const pref = { knife: 8, boomer: 8, laser: 7, multi: 6, pierce: 5, dmg: 4, rate: 3, speed: 1, hp: player.hp < player.maxHp * 0.5 ? 9 : 2 };
   let best = cards[0];
   for (const c of cards) if ((pref[c.id] || 0) > (pref[best.id] || 0)) best = c;
   return best;
@@ -622,6 +763,7 @@ function loop(t) {
     }
 
     player.update(dt);
+    updateWeapons(dt);
 
     // 敌人
     for (const e of enemies) {
@@ -709,17 +851,7 @@ function loop(t) {
           } else {
             b.dead = true;
           }
-          if (e.hp <= 0) {
-            e.dead = true;
-            kills++;
-            burst(e.x, e.y, e.color, 8);
-            addShake(0.12, 2.5);
-            spawnGem(e.x, e.y, e.xp);
-            if (e.kind === 'splitter') {   // 分裂球死后爆出 2 个小球
-              spawnMini(e.x, e.y, e.color);
-              spawnMini(e.x, e.y, e.color);
-            }
-          }
+          if (e.hp <= 0) killEnemy(e);
           if (b.dead) break;
         }
       }
@@ -854,6 +986,44 @@ function render() {
 
   // 玩家
   if (player) player.draw();
+
+  // 环绕飞刀: 银色菱形绕玩家旋转
+  if (player && player.knives > 0) {
+    for (let i = 0; i < player.knives; i++) {
+      const [kx, ky] = knifePos(i, player.knives);
+      const sx = kx - camX, sy = ky - camY;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(knifeAngle * 2 + i);
+      ctx.fillStyle = '#dfe8f0';
+      ctx.fillRect(-1.5, -5, 3, 10);
+      ctx.restore();
+    }
+  }
+
+  // 回旋镖: 黄色旋转月牙
+  for (const b of booms) {
+    const sx = b.x - camX, sy = b.y - camY;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(b.spin);
+    ctx.fillStyle = '#ffd94d';
+    ctx.fillRect(-5, -2, 10, 4);
+    ctx.fillRect(-5, -2, 3, 7);
+    ctx.restore();
+  }
+
+  // 激光光束: 青色亮线快速淡出
+  for (const bm of beams) {
+    ctx.globalAlpha = bm.ttl / bm.max;
+    ctx.strokeStyle = '#7df9ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(bm.x1 - camX, bm.y1 - camY);
+    ctx.lineTo(bm.x2 - camX, bm.y2 - camY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 
   // 粒子
   for (const p of particles) {
