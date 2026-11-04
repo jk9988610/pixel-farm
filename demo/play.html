@@ -148,6 +148,16 @@
     <button id="shopclose" class="close">关闭（B / Esc）</button>
   </div>
 </div>
+<div id="settle" class="overlay">
+  <div class="panel">
+    <div class="ptitle" id="sk_title">清晨结算</div>
+    <div class="srow"><span>夜战击杀</span><span id="sk_kills">0</span></div>
+    <div class="srow"><span>击杀奖励</span><span id="sk_reward">+0 金</span></div>
+    <div class="srow"><span>恢复体力</span><span id="sk_heal">+0 HP</span></div>
+    <div class="srow"><span>当前金币</span><span id="sk_coins">100</span></div>
+    <button id="settleok" class="close">确认收工（Enter）</button>
+  </div>
+</div>
 
 <script type="module">
 // 全局错误显示
@@ -259,6 +269,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'b') { toggleShop(); return; }
+  if (k === 'enter') { closeSettlement(); return; }
   if (k === ' ') { actionQueued = true; return; }
   if (k === '1' || k === '2' || k === '3') {
     selectedCrop = Number(k) - 1;
@@ -437,6 +448,7 @@ document.getElementById('shoprows').addEventListener('click', (e) => {
   else if (b.dataset.sellall !== undefined) sellProduce(Number(b.dataset.sellall), true);
 });
 document.getElementById('shopclose').addEventListener('click', closeShop);
+document.getElementById('settleok').addEventListener('click', closeSettlement);
 
 // ===== 昼夜双循环 (最小版) =====
 // 白天: 限时种田, 不出敌人; 夜晚: 敌潮+Boss; 清晨: 按夜晚击杀结算金币并清场.
@@ -459,22 +471,43 @@ function startNight() {
 }
 
 function startDay() {
-  // 清晨结算: 夜战击杀换金币, 清场, 小幅回血
-  const bonus = nightKills * 2;
+  // 清晨结算: 夜战击杀换金币, 清场, 小幅回血, 弹面板确认
+  const k = nightKills;
+  const bonus = k * 2;
   coins += bonus;
   nightKills = 0;
   for (const e of enemies) burst(e.x, e.y, e.color, 4);
   enemies = [];
   ebullets = [];
   bullets = [];
-  player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * 0.15));
+  const heal = Math.min(player.maxHp - player.hp, Math.round(player.maxHp * 0.15));
+  player.hp += heal;
   phase = 'day';
   phaseT = DAY_LEN;
   spawnTimer = 0;
   bossT = 12;
-  popText(player.x, player.y - 46, '清晨结算 +' + bonus + ' 金币', '#ffd166', 14);
   updateFarmHud();
   saveDirty = true;
+  saveGame();
+  showSettlement(k, bonus, heal);
+}
+
+function showSettlement(killsN, bonus, heal) {
+  $('sk_kills').textContent = killsN;
+  $('sk_reward').textContent = '+' + bonus + ' 金';
+  $('sk_heal').textContent = '+' + heal + ' HP';
+  $('sk_coins').textContent = coins;
+  $('settle').style.display = 'flex';
+  keys.clear();
+  actionQueued = false;
+  resetTouch();
+  gameState = 'settle';
+}
+
+function closeSettlement() {
+  if (gameState !== 'settle') return;
+  $('settle').style.display = 'none';
+  gameState = 'playing';
   saveGame();
 }
 
@@ -1221,6 +1254,7 @@ function reset(preserveProgress = false) {
   }
   shopOpen = false;
   $('shop').style.display = 'none';
+  $('settle').style.display = 'none';
   spawnTimer = 0;
   deadTimer = 0;
   bossT = 12;
@@ -1326,7 +1360,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused' || gameState === 'shop') {
+    if (gameState === 'paused' || gameState === 'shop' || gameState === 'settle') {
       render();
       return;
     }
