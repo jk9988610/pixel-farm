@@ -89,4 +89,16 @@
 
 **第 3 批次验证说明**：按用户「快速开发」要求，自本节起不再启动浏览器/自动化交互验证，仅保留 `node --check`、`py_compile` 与部署后 HTTP 状态码探测；涉及交互的验收项在 WORKLOG 标注「验证按用户要求跳过（快速模式）」，不记为「已验证通过」。
 
+**第 3 批次部署记录（2026-11-04）**
+
+| 项 | 结果 |
+| --- | --- |
+| 远程备份 | `/tmp/play.bykc.click-backup-202611041149-full.tgz`（51K，`tar czhf` 解引用软链） |
+| 备份踩坑 | 首次按旧命令 `tar czf ... play.bykc.click` 只得到 147B：docroot 已是软链，tar 只打包了链接本身。**软链化 docroot 后备份必须加 `-h`** |
+| 部署方式 | `python deploy.py`（release + 软链原子切换），release `20261104114950` |
+| 打包 | 153 个文件 / 93.2 KB（B11 生效，原 161） |
+| 发布探测 | `https://play.bykc.click/play.html` 200 / 62.1 KB；`https://play.bykc.click/assets/sv/manifest.json` 200 / 2.1 KB（快速模式仅查这两项，未抽查图片/角色帧） |
+| 上一版 | `20261104111000` |
+| 回滚命令 | `ssh aliyun-ab "ln -sfn /var/www/play.bykc.click.releases/20261104111000 /var/www/play.bykc.click"`；或解压 `/tmp/play.bykc.click-backup-202611041149-full.tgz` |
+
 
