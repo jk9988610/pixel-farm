@@ -67,6 +67,20 @@
   .lu-card:hover { background: #2a3648; transform: translateY(-3px); }
   .lu-card .ico { font-size: 24px; display: block; margin-bottom: 8px; }
   .lu-hint { color: #8899aa; font-size: 11px; }
+  #tablock {
+    position: fixed; inset: 0; z-index: 40;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    background: rgba(0,0,0,0.78);
+    color: #dfe8c8; font-size: 12px; text-align: center;
+  }
+  #tablock .t1 { color: #ffd166; font-size: 16px; }
+  #tablock button {
+    padding: 8px 18px; background: #1c2430; color: #7df9ff;
+    border: 2px solid #7df9ff; border-radius: 4px;
+    font-family: inherit; font-size: 13px; cursor: pointer;
+  }
+  #tablock button:hover { background: #2a3648; }
 </style>
 </head>
 <body>
@@ -86,6 +100,11 @@
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
+<div id="tablock">
+  <div class="t1">另一个标签页正在游戏</div>
+  <div>为避免存档互相覆盖，此标签页已暂停。</div>
+  <button id="tabtake">在此标签页继续</button>
+</div>
 
 <script type="module">
 // 全局错误显示
@@ -187,6 +206,7 @@ const touch = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
 let actionQueued = false;
 
 window.addEventListener('keydown', (e) => {
+  if (!isActiveTab) return;
   const k = e.key.toLowerCase();
   if (MOVE_KEYS.has(k) || k === ' ') e.preventDefault();
   if (e.repeat) return;
@@ -213,6 +233,7 @@ function resetTouch() {
   touch.active = false; touch.id = null; touch.dx = 0; touch.dy = 0;
 }
 canvas.addEventListener('pointerdown', (e) => {
+  if (!isActiveTab) return;
   if (touch.id !== null) return;
   const p = toLogic(e);
   touch.active = true; touch.id = e.pointerId;
@@ -249,6 +270,7 @@ function readMoveDir() {
 }
 
 function togglePause() {
+  if (!isActiveTab) return;
   if (gameState === 'playing') {
     gameState = 'paused';
     keys.clear();
@@ -371,7 +393,7 @@ function snapshotStats(target) {
 }
 
 function saveGame() {
-  if (!saveReady) return;
+  if (!saveReady || !isActiveTab) return;
   try {
     const payload = {
       version: SAVE_VERSION,
@@ -427,7 +449,12 @@ function loadGame() {
 
 window.addEventListener('pagehide', saveGame);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') saveGame();
+  if (document.visibilityState === 'hidden') {
+    saveGame();
+    releaseLock();      // 让出写锁, 可见的其它标签页可接管
+  } else {
+    becomeActive();     // 锁空闲则自动接管, 否则保持待命
+  }
 });
 
 function drawCrop(cx, by, c, stage) {
@@ -1077,6 +1104,24 @@ function loop(t) {
     const dt = Math.min(0.05, (t - lastT) / 1000);
     lastT = t;
 
+    // 待命标签页: 只渲染, 不跑逻辑也不写存档; 锁空闲时自动接管
+    if (!isActiveTab) {
+      lockTimer += dt;
+      if (lockTimer >= LOCK_HEARTBEAT) {
+        lockTimer = 0;
+        if (!lockHeldByOther()) takeOver();
+      }
+      render();
+      return;
+    }
+
+    // 锁心跳: 证明本标签仍存活, 避免被其它标签判为过期
+    lockTimer += dt;
+    if (lockTimer >= LOCK_HEARTBEAT) {
+      lockTimer = 0;
+      writeLock();
+    }
+
     if (gameState === 'paused') {
       render();
       return;
@@ -1495,6 +1540,99 @@ function render() {
   }
 }
 
+// ===== 多标签页单写锁 =====
+// 同一存档只允许一个标签页写: 活动标签每 2s 刷新锁心跳, 其余标签进入待命(只读),
+// 待命标签可点「在此标签页继续」手动接管, 接管时载入最近存档.
+const LOCK_KEY = 'pixel-farm-lock-v1';
+const LOCK_HEARTBEAT = 2;   // 秒, 心跳周期
+const LOCK_STALE = 8;       // 秒, 超过即视为持有者已关闭
+const tabId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let isActiveTab = false;
+let lockTimer = 0;
+
+function readLock() {
+  try {
+    const s = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null');
+    if (s && typeof s.tab === 'string' && isNum(s.at)) return s;
+  } catch (e) { /* 锁数据损坏时按无锁处理 */ }
+  return null;
+}
+
+function writeLock() {
+  try {
+    localStorage.setItem(LOCK_KEY, JSON.stringify({ tab: tabId, at: Date.now() }));
+  } catch (e) { /* 写入失败(隐私模式)时退化为单标签可用 */ }
+}
+
+function lockHeldByOther() {
+  const cur = readLock();
+  return !!cur && cur.tab !== tabId && Date.now() - cur.at <= LOCK_STALE * 1000;
+}
+
+// force=true: 用户主动接管; false: 只在锁空闲时获取
+function acquireLock(force) {
+  if (!force && lockHeldByOther()) { isActiveTab = false; return false; }
+  isActiveTab = true;
+  writeLock();
+  return true;
+}
+
+function releaseLock() {
+  if (!isActiveTab) return;
+  const cur = readLock();
+  if (cur && cur.tab === tabId) {
+    try { localStorage.removeItem(LOCK_KEY); } catch (e) {}
+  }
+  isActiveTab = false;
+}
+
+function enterStandby() {
+  isActiveTab = false;
+  if (gameState === 'playing') gameState = 'paused';
+  keys.clear();
+  actionQueued = false;
+  resetTouch();
+  $('tablock').style.display = 'flex';
+}
+
+// 接管: 先占锁, 再载入最近存档, 保证接过来的进度是最新的
+function takeOver() {
+  acquireLock(true);
+  $('tablock').style.display = 'none';
+  loadGame();
+  reset(true);
+  saveReady = true;
+  lastT = performance.now();
+}
+
+// 变回可见: 锁空闲就接着玩, 否则保持待命
+function becomeActive() {
+  if (isActiveTab) return;
+  if (!acquireLock(false)) { enterStandby(); return; }
+  $('tablock').style.display = 'none';
+  if (gameState === 'paused') gameState = 'playing';
+}
+
+document.getElementById('tabtake').addEventListener('click', takeOver);
+
+window.addEventListener('storage', (e) => {
+  if (e.key !== LOCK_KEY) return;   // 存档键的变更由锁机制间接保证, 无需合并
+  if (lockHeldByOther()) {
+    if (isActiveTab) enterStandby();
+  } else if (!isActiveTab) {
+    becomeActive();
+  }
+});
+
+// 关闭页面时释放锁, 让其它标签页立即接管(而不是等 8s 过期)
+window.addEventListener('pagehide', () => {
+  if (!isActiveTab) return;
+  const cur = readLock();
+  if (cur && cur.tab === tabId) {
+    try { localStorage.removeItem(LOCK_KEY); } catch (e) {}
+  }
+});
+
 // ===== 启动 =====
 (async function boot() {
   // 先显示 loading
@@ -1511,6 +1649,8 @@ function render() {
   // 加载失败也继续 (fallback 色块)
   loadGame();
   reset(true);
+  // 拿不到写锁说明另一个标签页在玩: 本页只读待命
+  if (!acquireLock(false)) enterStandby();
   saveReady = true;
   lastT = performance.now();
   requestAnimationFrame(loop);
