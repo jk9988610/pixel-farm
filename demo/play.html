@@ -87,15 +87,17 @@
 <canvas id="game" width="640" height="360"></canvas>
 <div id="hud">
   <div>时间: <span id="time">0:00</span></div>
+  <div>阶段: <span id="phase">白天 45s</span></div>
   <div>击杀: <span id="kills">0</span></div>
   <div>等级: <span id="level">1</span></div>
 </div>
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
-<div id="hint">WASD / 方向键 移动 · Esc 暂停 · 触屏可拖动左下摇杆</div>
+<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · Esc 暂停</div>
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
   <div>种子: <span id="seedname">萝卜</span></div>
+  <div>夜战击杀: <span id="nkills">0</span></div>
   <div class="key">1/2/3 选种 · 空格 播种/收获 · 自动存档</div>
 </div>
 <div id="err"></div>
@@ -301,6 +303,46 @@ function newPlots() {
 }
 let plots = newPlots();
 
+// ===== 昼夜双循环 (最小版) =====
+// 白天: 限时种田, 不出敌人; 夜晚: 敌潮+Boss; 清晨: 按夜晚击杀结算金币并清场.
+const DAY_LEN = 45;
+const NIGHT_LEN = 35;
+let phase = 'day';        // day / night
+let phaseT = DAY_LEN;     // 当前阶段剩余秒数
+let nightKills = 0;       // 本夜击杀数(与总击杀 kills 分离)
+
+function startNight() {
+  phase = 'night';
+  phaseT = NIGHT_LEN;
+  nightKills = 0;
+  bossT = 12;             // 每夜一只 Boss, 入夜 12s 出现
+  spawnTimer = 0;
+  popText(player.x, player.y - 46, '夜幕降临 · 敌人来袭', '#ff9f6b', 15);
+  addShake(0.25, 3);
+  saveDirty = true;
+  saveGame();
+}
+
+function startDay() {
+  // 清晨结算: 夜战击杀换金币, 清场, 小幅回血
+  const bonus = nightKills * 2;
+  coins += bonus;
+  nightKills = 0;
+  for (const e of enemies) burst(e.x, e.y, e.color, 4);
+  enemies = [];
+  ebullets = [];
+  bullets = [];
+  player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * 0.15));
+  phase = 'day';
+  phaseT = DAY_LEN;
+  spawnTimer = 0;
+  bossT = 12;
+  popText(player.x, player.y - 46, '清晨结算 +' + bonus + ' 金币', '#ffd166', 14);
+  updateFarmHud();
+  saveDirty = true;
+  saveGame();
+}
+
 function plotPos(i) {
   const col = i % FARM_COLS, row = Math.floor(i / FARM_COLS);
   return [FARM_X0 + col * (FARM_CELL + FARM_GAP), FARM_Y0 + row * (FARM_CELL + FARM_GAP)];
@@ -370,6 +412,7 @@ function updateFarmHud() {
   const c = CROPS[selectedCrop];
   $('coins').textContent = coins;
   $('seedname').textContent = c.name + ' (' + c.cost + '金/' + c.grow + 's)';
+  $('nkills').textContent = nightKills;
 }
 
 // ===== 存档 v1 (localStorage) =====
@@ -404,6 +447,9 @@ function saveGame() {
       xpNext,
       selectedCrop,
       farmTime,
+      phase,
+      phaseT,
+      nightKills,
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
       stats: player ? snapshotStats(player) : (pendingStats || {}),
     };
@@ -438,6 +484,11 @@ function loadGame() {
     xpNext = Math.max(1, Math.floor(s.xpNext));
     selectedCrop = Math.max(0, Math.min(CROPS.length - 1, Math.floor(s.selectedCrop)));
     farmTime = Math.max(0, s.farmTime);
+    // 昼夜字段为后加的可选字段: 旧档缺省按白天处理, 不判损坏
+    phase = (s.phase === 'night') ? 'night' : 'day';
+    const len = phase === 'night' ? NIGHT_LEN : DAY_LEN;
+    phaseT = isNum(s.phaseT) ? Math.max(0, Math.min(len, s.phaseT)) : len;
+    nightKills = isNum(s.nightKills) ? Math.max(0, Math.floor(s.nightKills)) : 0;
     plots = loadedPlots;
     pendingStats = Object.keys(stats).length ? stats : null;
     return true;
@@ -547,6 +598,9 @@ function updateHud() {
   $('time').textContent = Math.floor(gameTime / 60) + ':' + String(s).padStart(2, '0');
   $('kills').textContent = kills;
   $('level').textContent = level;
+  const remain = Math.max(0, Math.ceil(phaseT));
+  $('phase').textContent = (phase === 'day' ? '白天 ' : '夜晚 ') + remain + 's';
+  $('phase').style.color = phase === 'night' ? '#ff9f6b' : '#9fe07a';
   if (player) {
     const pct = Math.max(0, player.hp / player.maxHp * 100);
     $('hpfill').style.width = pct + '%';
@@ -781,6 +835,7 @@ function killEnemy(e) {
   if (e.dead) return;
   e.dead = true;
   kills++;
+  if (phase === 'night') { nightKills++; saveDirty = true; }
   burst(e.x, e.y, e.color, 8);
   addShake(0.12, 2.5);
   spawnGem(e.x, e.y, e.xp);
@@ -1016,10 +1071,13 @@ function reset(preserveProgress = false) {
     selectedCrop = 0;
     plots = newPlots();
     farmTime = 0;
+    phase = 'day';
+    phaseT = DAY_LEN;
+    nightKills = 0;
   }
   spawnTimer = 0;
   deadTimer = 0;
-  bossT = 60;
+  bossT = 12;
   shakeT = 0; shakeDur = 0; shakeMag = 0;
   gameState = 'playing';
   actionQueued = false;
@@ -1151,21 +1209,30 @@ function loop(t) {
       if (saveDirty) saveGame();
     }
 
-    // 生成敌人
-    spawnTimer += dt;
-    const spawnRate = Math.max(0.18, 0.9 - gameTime * 0.008);
-    if (spawnTimer > spawnRate) {
-      spawnTimer = 0;
-      spawnEnemy();
-      if (gameTime > 30 && Math.random() < 0.5) spawnEnemy();
-      if (gameTime > 60 && Math.random() < 0.4) spawnEnemy();
+    // 生成敌人: 白天休整, 夜晚来袭
+    phaseT -= dt;
+    if (phaseT <= 0) {
+      if (phase === 'day') startNight();
+      else startDay();
     }
 
-    // Boss 波次: 每 60s 一只
-    bossT -= dt;
-    if (bossT <= 0) {
-      bossT = 60;
-      spawnBoss();
+    if (phase === 'night') {
+      spawnTimer += dt;
+      const nightT = NIGHT_LEN - phaseT;
+      const spawnRate = Math.max(0.18, 0.9 - nightT * 0.012);
+      if (spawnTimer > spawnRate) {
+        spawnTimer = 0;
+        spawnEnemy();
+        if (nightT > 12 && Math.random() < 0.5) spawnEnemy();
+        if (nightT > 24 && Math.random() < 0.4) spawnEnemy();
+      }
+
+      // Boss 波次: 每夜一只
+      bossT -= dt;
+      if (bossT <= 0) {
+        bossT = 999;
+        spawnBoss();
+      }
     }
 
     player.update(dt);
@@ -1495,6 +1562,12 @@ function render() {
   ctx.globalAlpha = 1;
 
   ctx.restore();
+
+  // 夜色滤镜: 夜晚压暗偏蓝, 与白天形成明显区分
+  if (phase === 'night') {
+    ctx.fillStyle = 'rgba(10,16,48,0.42)';
+    ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+  }
 
   // 触屏摇杆
   if (touch.active) {
