@@ -132,4 +132,6 @@
 | 回滚命令 | `ssh aliyun-ab "ln -sfn /var/www/play.bykc.click.releases/20261104114950 /var/www/play.bykc.click"`；或从 `/tmp/play.bykc.click-backup-202611041203-full.tgz` 恢复 |
 | 备份注意 | 软链 docroot 必须 `tar czhf`（`-h`），否则只打包 147B 链接本体 |
 
+**批次开始（2026-11-04，第 5 批次）**：目标「补齐入口、仓库卫生与自检，并做一项最小玩法增量」。范围：B16 根 README 与忽略规则、B17 pixi.js `package.json` 取证处理、B18 忽略与换行、B19 `tools/check_repo.py` 烟雾测试、B20 作物品类扩展 + 价格浮动；收尾先跑 `check_repo.py` 再部署。计划见 `docs/PLAN-05.md`。快速模式继续：不做浏览器交互验证，不 push。
+
 
