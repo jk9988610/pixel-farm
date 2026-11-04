@@ -138,6 +138,7 @@
 
 | 日期 | 批次/条目 | 状态 | 提交 | 验证 | 部署 | 遗留 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-11-04 | B16 根 README 与忽略规则 | 已完成 | 见本行提交 | `.gitignore` 移除 `README.md` 一行；`git check-ignore -v README.md` 无输出（退出码 1）；新增根 `README.md`（项目简介、本地运行、操作、docs 三链接、素材/部署入口、零依赖说明）。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | README 操作键位先写 `1`–`3`，B20 扩到 5 作物时同步更新 |
+| 2026-11-04 | B16 根 README 与忽略规则 | 已完成 | `2e4a54c` | `.gitignore` 移除 `README.md` 一行；`git check-ignore -v README.md` 无输出（退出码 1）；新增根 `README.md`（项目简介、本地运行、操作、docs 三链接、素材/部署入口、零依赖说明）。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | README 操作键位先写 `1`–`3`，B20 扩到 5 作物时同步更新 |
+| 2026-11-04 | B17 pixi.js 遗留 package.json | 已完成（按规则保留） | 见本行提交 | 取证：`git ls-files package.json` 已跟踪；`git grep -n -i 'package\.json'` 命中 README / AUDIT-04 / PLAN-04 / PLAN-05 / ROADMAP / SETUP / WORKLOG 共 15 处，均为说明性引用，无脚本/部署依赖。按用户「发现引用则保留并加注」规则 **不删除**；`SETUP.md` 补充「可 `git rm` 且历史可恢复」，README 已注明勿 `npm install`。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 若你确认无保留价值，可下一批次 `git rm package.json` 并同步清理文档引用 |
 
 

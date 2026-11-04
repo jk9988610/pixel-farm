@@ -18,7 +18,7 @@
 | Aseprite | `E:\tools\Aseprite-1.3.18.6-x64\aseprite.exe` | 改像素素材时必需 | 运行 Lua 生成脚本 |
 | 浏览器 | Chrome / Edge 等 | 运行必需 | 打开 `demo/play.html` |
 
-> `package.json` 是上游 pixi.js 的遗留元数据，与本项目无关，**不要**据此安装依赖。
+> `package.json` 是上游 pixi.js 的遗留元数据，与本项目无关，**不要**据此安装依赖。确需清理时可 `git rm package.json` 单独提交，文件仍可从 Git 历史恢复。
 
 ## 3. 获取与本地运行
 
