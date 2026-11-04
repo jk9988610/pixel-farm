@@ -93,4 +93,9 @@ LICENSE
 # 本地临时
 play-dist.zip
 *.zip
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
 skills/

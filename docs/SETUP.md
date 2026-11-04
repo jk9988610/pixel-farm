@@ -95,7 +95,7 @@ node --check "$env:TEMP\play-check.mjs"
 python -m py_compile deploy.py deploy-legacy.py tools/art/gen_sv_manifest.py tools/art/gen_char_manifest.py
 ```
 
-`py_compile` 会生成 `__pycache__/`，属本地产物，**不要提交**（`.gitignore` 目前未收录该规则）。
+`py_compile` 会生成 `__pycache__/`，已被 `.gitignore` 忽略，不要提交。
 
 ## 7. 部署前置：SSH
 
@@ -190,7 +190,8 @@ ssh aliyun-ab "cd /var/www && rm -f play.bykc.click && tar xzhf /tmp/play.bykc.c
 | 页面空白 / manifest 加载失败 | 用了 `file://` 打开；改起 `http.server`（第 3 节） |
 | 改了代码线上没变 | 浏览器缓存；`Ctrl+Shift+R`，并确认 release 时间戳已更新 |
 | `gen_sv_manifest.py` 报「未配置分类」 | 新 PNG 没登记到 `CATEGORY` |
-| `__pycache__/` 出现在 `git status` | 静态检查产物，直接删除，不要提交 |
+| `__pycache__/` 出现在 `git status` | 静态检查产物，已被 `.gitignore` 忽略；若出现在工作区直接删除 |
+| 提交时仍提示 LF→CRLF | `.gitattributes` 已设 `* text=auto`；历史文件首次规范化可能提示一次，属正常，不影响内容 |
 | 控制台中文乱码（Windows） | `deploy.py` 已设置 UTF-8；PowerShell 可先 `chcp 65001` |
 
 ## 11. 发布范围
