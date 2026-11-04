@@ -117,7 +117,8 @@
 <canvas id="game" width="640" height="360"></canvas>
 <div id="hud">
   <div>时间: <span id="time">0:00</span></div>
-  <div>阶段: <span id="phase">白天 45s</span></div>
+  <div>天数: <span id="day">1</span></div>
+  <div>阶段: <span id="phase">白天 50s</span></div>
   <div>击杀: <span id="kills">0</span></div>
   <div>等级: <span id="level">1</span></div>
 </div>
@@ -451,12 +452,13 @@ document.getElementById('shopclose').addEventListener('click', closeShop);
 document.getElementById('settleok').addEventListener('click', closeSettlement);
 
 // ===== 昼夜双循环 (最小版) =====
-// 白天: 限时种田, 不出敌人; 夜晚: 敌潮+Boss; 清晨: 按夜晚击杀结算金币并清场.
-const DAY_LEN = 45;
-const NIGHT_LEN = 35;
+// 白天: 限时种田 + 少量弱敌(补升级节奏); 夜晚: 敌潮+Boss; 清晨: 结算金币并清场.
+const DAY_LEN = 50;
+const NIGHT_LEN = 40;
 let phase = 'day';        // day / night
 let phaseT = DAY_LEN;     // 当前阶段剩余秒数
 let nightKills = 0;       // 本夜击杀数(与总击杀 kills 分离)
+let dayNumber = 1;        // 第几天, 夜晚强度按天递增
 
 function startNight() {
   phase = 'night';
@@ -476,6 +478,7 @@ function startDay() {
   const bonus = k * 2;
   coins += bonus;
   nightKills = 0;
+  dayNumber++;
   for (const e of enemies) burst(e.x, e.y, e.color, 4);
   enemies = [];
   ebullets = [];
@@ -493,6 +496,7 @@ function startDay() {
 }
 
 function showSettlement(killsN, bonus, heal) {
+  $('sk_title').textContent = '第 ' + dayNumber + ' 天 · 清晨结算';
   $('sk_kills').textContent = killsN;
   $('sk_reward').textContent = '+' + bonus + ' 金';
   $('sk_heal').textContent = '+' + heal + ' HP';
@@ -618,6 +622,7 @@ function saveGame() {
       phase,
       phaseT,
       nightKills,
+      dayNumber,
       seeds: seeds.slice(),
       produce: produce.slice(),
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
@@ -659,6 +664,7 @@ function loadGame() {
     const len = phase === 'night' ? NIGHT_LEN : DAY_LEN;
     phaseT = isNum(s.phaseT) ? Math.max(0, Math.min(len, s.phaseT)) : len;
     nightKills = isNum(s.nightKills) ? Math.max(0, Math.floor(s.nightKills)) : 0;
+    dayNumber = isNum(s.dayNumber) ? Math.max(1, Math.floor(s.dayNumber)) : 1;
     // 库存为后加的可选字段: 旧档缺省给初始种子, 不判损坏
     const readInv = (v) => (Array.isArray(v) && v.length === CROPS.length && v.every((x) => isNum(x) && x >= 0))
       ? v.map((x) => Math.floor(x)) : null;
@@ -773,6 +779,7 @@ function updateHud() {
   $('time').textContent = Math.floor(gameTime / 60) + ':' + String(s).padStart(2, '0');
   $('kills').textContent = kills;
   $('level').textContent = level;
+  $('day').textContent = dayNumber;
   const remain = Math.max(0, Math.ceil(phaseT));
   $('phase').textContent = (phase === 'day' ? '白天 ' : '夜晚 ') + remain + 's';
   $('phase').style.color = phase === 'night' ? '#ff9f6b' : '#9fe07a';
@@ -948,14 +955,17 @@ function pickType() {
   return ENEMY_TYPES[Math.floor(Math.random() * (maxI + 1))];
 }
 
-function spawnEnemy() {
+function spawnEnemy(weak) {
   const a = Math.random() * Math.PI * 2;
   const d = 360 + Math.random() * 80;
-  const t = pickType();
+  // 白天只出前 3 种弱敌, 保证种田时压力可控; 夜晚走完整 pickType
+  const t = weak ? ENEMY_TYPES[Math.floor(Math.random() * 3)] : pickType();
+  const mul = 1 + 0.10 * (dayNumber - 1);
+  const hp = Math.round(t.hp * mul);
   enemies.push({
     x: player.x + Math.cos(a) * d,
     y: player.y + Math.sin(a) * d,
-    hp: t.hp, maxHp: t.hp,
+    hp, maxHp: hp,
     speed: t.speed, size: t.size,
     dmg: t.dmg, xp: t.xp, color: t.color,
     kind: t.kind || 'chase',
@@ -978,11 +988,11 @@ function spawnMini(x, y, color) {
   });
 }
 
-// ===== Boss (每 60s 一只, 高血大体积, 环绕弹幕+蓄力冲刺, 掉稀有增益) =====
+// ===== Boss (每夜一只, 高血大体积, 环绕弹幕+蓄力冲刺, 掉稀有增益) =====
 let bossT = 60;   // 距下一只 boss 的秒数
 function spawnBoss() {
   const a = Math.random() * Math.PI * 2;
-  const hp = Math.round(150 + gameTime * 1.5);   // 血量随时间成长
+  const hp = Math.round(150 + 70 * (dayNumber - 1));   // 血量按天数成长
   enemies.push({
     x: player.x + Math.cos(a) * 400,
     y: player.y + Math.sin(a) * 400,
@@ -1249,6 +1259,7 @@ function reset(preserveProgress = false) {
     phase = 'day';
     phaseT = DAY_LEN;
     nightKills = 0;
+    dayNumber = 1;
     seeds = START_SEEDS.slice();
     produce = [0, 0, 0];
   }
@@ -1412,6 +1423,13 @@ function loop(t) {
       if (bossT <= 0) {
         bossT = 999;
         spawnBoss();
+      }
+    } else {
+      // 白天保留少量弱敌: 每 4s 一只, 补足升级节奏
+      spawnTimer += dt;
+      if (spawnTimer > 4) {
+        spawnTimer = 0;
+        spawnEnemy(true);
       }
     }
 
