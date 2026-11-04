@@ -117,5 +117,6 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-04 | B12 仓库自洽审计 | 已完成 | 见本行提交 | 审计 `git ls-files`（172 项）、`git status --short --ignored`、`git check-ignore -v docs/WORKLOG.md`（无输出，docs 已入库）；缺口汇总见 `docs/AUDIT-04.md`。**验证按用户要求跳过浏览器交互（快速模式）** | 未部署 | 根 `README.md` 被忽略、`package.json` 为 pixi.js 遗留、无 CI/测试，均需用户决定 |
 | 2026-11-04 | B13 补齐仓库内容 | 已完成 | 见本行提交 | `git mv` 8 个脚本到 `tools/art/`；`py_compile` 通过；在 `%TEMP%` 下运行两个 manifest 生成器，均正确定位 `demo/assets/...`（生成物仅时间戳变化，已还原）；`deploy.py` 删除 `_scripts` 过滤后打包仍 153 个文件；`demo/assets/char/README.txt` 与 ROADMAP 路径引用已同步。Lua 脚本未实际执行（需 Aseprite，快速模式不做）。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | Lua 脚本仍要求「以仓库根为工作目录」（已写入 SETUP）；`.gitignore` 未加 `__pycache__`（用户文件不改写） |
+| 2026-11-04 | B14 前置条件文档化 | 已完成 | 见本行提交 | 新增 `docs/SETUP.md`：环境版本（Node 24.19.0 / Python 3.12.10）、Aseprite 路径与 Lua 运行方式、`aliyun-ab` SSH 别名与自检、远程 releases+软链结构、部署/备份/回滚命令、10 类常见故障（含 `tar czhf`）。路径与迁移后的 `tools/art/` 一致。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | SSH 主机/IP 属既有信息已文档化；私钥正文未写入 |
 
 
