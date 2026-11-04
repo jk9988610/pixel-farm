@@ -81,6 +81,36 @@
     font-family: inherit; font-size: 13px; cursor: pointer;
   }
   #tablock button:hover { background: #2a3648; }
+  .overlay {
+    position: fixed; inset: 0; z-index: 30;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.72);
+  }
+  .panel {
+    background: #1c2430; border: 2px solid #7df9ff; border-radius: 6px;
+    padding: 14px 16px; color: #fff; font-size: 12px; min-width: 320px;
+  }
+  .ptitle { color: #ffd166; font-size: 16px; text-align: center; margin-bottom: 8px; }
+  .coinline { color: #dfe8c8; text-align: center; margin-bottom: 8px; }
+  .shoprow {
+    display: grid; grid-template-columns: 52px 78px 1fr 96px;
+    gap: 6px; align-items: center;
+    padding: 4px 0; border-top: 1px solid #2c3a4c;
+  }
+  .shoprow.head { color: #8899aa; border-top: 0; }
+  .srow {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 10px; padding: 5px 0; border-top: 1px solid #2c3a4c;
+  }
+  .panel button {
+    background: #2a3648; color: #7df9ff; border: 1px solid #7df9ff;
+    border-radius: 3px; font-family: inherit; font-size: 11px;
+    padding: 3px 8px; cursor: pointer;
+  }
+  .panel button:hover { background: #38506a; }
+  .panel .msg { min-height: 18px; color: #ff8f6b; font-size: 11px; margin-top: 8px; text-align: center; }
+  .panel .msg.ok { color: #9fe07a; }
+  .panel .close { display: block; margin: 10px auto 0; }
 </style>
 </head>
 <body>
@@ -96,9 +126,10 @@
 <div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · Esc 暂停</div>
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
-  <div>种子: <span id="seedname">萝卜</span></div>
+  <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2</span></div>
+  <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
-  <div class="key">1/2/3 选种 · 空格 播种/收获 · 自动存档</div>
+  <div class="key">1/2/3 选种 · 空格 播种/收获 · B 商店 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -106,6 +137,16 @@
   <div class="t1">另一个标签页正在游戏</div>
   <div>为避免存档互相覆盖，此标签页已暂停。</div>
   <button id="tabtake">在此标签页继续</button>
+</div>
+<div id="shop" class="overlay">
+  <div class="panel">
+    <div class="ptitle">种子商店</div>
+    <div class="coinline">金币: <span id="shopcoins">100</span></div>
+    <div class="shoprow head"><span>作物</span><span>买种子</span><span>持有</span><span>卖出</span></div>
+    <div id="shoprows"></div>
+    <div id="shopmsg" class="msg"></div>
+    <button id="shopclose" class="close">关闭（B / Esc）</button>
+  </div>
 </div>
 
 <script type="module">
@@ -212,7 +253,12 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (MOVE_KEYS.has(k) || k === ' ') e.preventDefault();
   if (e.repeat) return;
-  if (k === 'escape') { togglePause(); return; }
+  if (k === 'escape') {
+    if (shopOpen) { closeShop(); return; }
+    togglePause();
+    return;
+  }
+  if (k === 'b') { toggleShop(); return; }
   if (k === ' ') { actionQueued = true; return; }
   if (k === '1' || k === '2' || k === '3') {
     selectedCrop = Number(k) - 1;
@@ -303,6 +349,95 @@ function newPlots() {
 }
 let plots = newPlots();
 
+// ===== 经济: 种子库存 / 作物库存 =====
+// 收获不再直接给金币: 作物进 produce, 需在商店卖出; 播种消耗 seeds, 需在商店买入.
+const START_SEEDS = [5, 3, 2];
+let seeds = START_SEEDS.slice();
+let produce = [0, 0, 0];
+let shopOpen = false;
+
+function shopMsg(text, isErr) {
+  const el = $('shopmsg');
+  el.textContent = text;
+  el.className = 'msg' + (isErr ? '' : ' ok');
+}
+
+function renderShop() {
+  $('shopcoins').textContent = coins;
+  $('shoprows').innerHTML = CROPS.map((c, i) => `
+    <div class="shoprow">
+      <span>${c.name}</span>
+      <button data-buy="${i}">买 ${c.cost}金</button>
+      <span>种子 ${seeds[i]} / 作物 ${produce[i]}</span>
+      <span><button data-sell="${i}">卖1</button> <button data-sellall="${i}">全卖${c.sell}</button></span>
+    </div>`).join('');
+}
+
+function afterTrade() {
+  updateFarmHud();
+  renderShop();
+  saveGame();
+}
+
+function buySeed(i) {
+  const c = CROPS[i];
+  if (coins < c.cost) {
+    shopMsg('金币不足: 买 ' + c.name + ' 种子需要 ' + c.cost + ' 金', true);
+    return;
+  }
+  coins -= c.cost;
+  seeds[i]++;
+  shopMsg('买入 ' + c.name + ' 种子 -' + c.cost + ' 金', false);
+  afterTrade();
+}
+
+function sellProduce(i, all) {
+  const c = CROPS[i];
+  const n = all ? produce[i] : 1;
+  if (n <= 0 || produce[i] < n) {
+    shopMsg('没有可卖的 ' + c.name, true);
+    return;
+  }
+  produce[i] -= n;
+  coins += c.sell * n;
+  shopMsg('卖出 ' + c.name + ' x' + n + ' +' + (c.sell * n) + ' 金', false);
+  afterTrade();
+}
+
+function openShop() {
+  if (gameState !== 'playing') return;
+  shopOpen = true;
+  gameState = 'shop';
+  keys.clear();
+  actionQueued = false;
+  resetTouch();
+  shopMsg('', false);
+  $('shop').style.display = 'flex';
+  renderShop();
+}
+
+function closeShop() {
+  if (!shopOpen) return;
+  shopOpen = false;
+  $('shop').style.display = 'none';
+  if (gameState === 'shop') gameState = 'playing';
+  saveGame();
+}
+
+function toggleShop() {
+  if (shopOpen) closeShop();
+  else openShop();
+}
+
+document.getElementById('shoprows').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.buy !== undefined) buySeed(Number(b.dataset.buy));
+  else if (b.dataset.sell !== undefined) sellProduce(Number(b.dataset.sell), false);
+  else if (b.dataset.sellall !== undefined) sellProduce(Number(b.dataset.sellall), true);
+});
+document.getElementById('shopclose').addEventListener('click', closeShop);
+
 // ===== 昼夜双循环 (最小版) =====
 // 白天: 限时种田, 不出敌人; 夜晚: 敌潮+Boss; 清晨: 按夜晚击杀结算金币并清场.
 const DAY_LEN = 45;
@@ -380,9 +515,9 @@ function farmAction() {
   if (p.state === 'ready') {
     const c = CROPS[p.crop];
     p.state = 'empty';
-    coins += c.sell;
+    produce[p.crop]++;
     const [x, y] = plotPos(i);
-    popText(x + FARM_CELL / 2, y + 4, '+' + c.sell + '金 +' + c.xp + 'XP', '#ffd166', 11);
+    popText(x + FARM_CELL / 2, y + 4, '+1 ' + c.name + ' +' + c.xp + 'XP', '#ffd166', 11);
     const ups = gainXp(c.xp);
     if (ups > 0) showLevelUp();
     updateFarmHud();
@@ -394,11 +529,11 @@ function farmAction() {
     return;
   }
   const c = CROPS[selectedCrop];
-  if (coins < c.cost) {
-    popText(player.x, player.y - 24, '金币不足', '#f66', 10);
+  if (seeds[selectedCrop] <= 0) {
+    popText(player.x, player.y - 24, '种子不足, 按 B 进商店', '#f66', 10);
     return;
   }
-  coins -= c.cost;
+  seeds[selectedCrop]--;
   p.state = 'growing';
   p.crop = selectedCrop;
   p.start = farmTime;
@@ -409,9 +544,9 @@ function farmAction() {
 }
 
 function updateFarmHud() {
-  const c = CROPS[selectedCrop];
   $('coins').textContent = coins;
-  $('seedname').textContent = c.name + ' (' + c.cost + '金/' + c.grow + 's)';
+  $('seedname').textContent = CROPS.map((c, i) => c.name + ' ' + seeds[i]).join(' / ');
+  $('produce').textContent = CROPS.map((c, i) => c.name + ' ' + produce[i]).join(' / ');
   $('nkills').textContent = nightKills;
 }
 
@@ -450,6 +585,8 @@ function saveGame() {
       phase,
       phaseT,
       nightKills,
+      seeds: seeds.slice(),
+      produce: produce.slice(),
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
       stats: player ? snapshotStats(player) : (pendingStats || {}),
     };
@@ -489,6 +626,11 @@ function loadGame() {
     const len = phase === 'night' ? NIGHT_LEN : DAY_LEN;
     phaseT = isNum(s.phaseT) ? Math.max(0, Math.min(len, s.phaseT)) : len;
     nightKills = isNum(s.nightKills) ? Math.max(0, Math.floor(s.nightKills)) : 0;
+    // 库存为后加的可选字段: 旧档缺省给初始种子, 不判损坏
+    const readInv = (v) => (Array.isArray(v) && v.length === CROPS.length && v.every((x) => isNum(x) && x >= 0))
+      ? v.map((x) => Math.floor(x)) : null;
+    seeds = readInv(s.seeds) || START_SEEDS.slice();
+    produce = readInv(s.produce) || [0, 0, 0];
     plots = loadedPlots;
     pendingStats = Object.keys(stats).length ? stats : null;
     return true;
@@ -574,7 +716,7 @@ function drawFarm() {
     const p = plots[near];
     const [x, y] = plotPos(near);
     let label;
-    if (p.state === 'empty') label = '空格 播种';
+    if (p.state === 'empty') label = seeds[selectedCrop] > 0 ? '空格 播种' : '种子不足 (B 商店)';
     else if (p.state === 'ready') label = '空格 收获';
     else {
       const c = CROPS[p.crop];
@@ -1074,7 +1216,11 @@ function reset(preserveProgress = false) {
     phase = 'day';
     phaseT = DAY_LEN;
     nightKills = 0;
+    seeds = START_SEEDS.slice();
+    produce = [0, 0, 0];
   }
+  shopOpen = false;
+  $('shop').style.display = 'none';
   spawnTimer = 0;
   deadTimer = 0;
   bossT = 12;
@@ -1180,7 +1326,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused') {
+    if (gameState === 'paused' || gameState === 'shop') {
       render();
       return;
     }
