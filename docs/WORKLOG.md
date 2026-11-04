@@ -118,6 +118,18 @@
 | 2026-11-04 | B12 仓库自洽审计 | 已完成 | `e470a40` | 审计 `git ls-files`（172 项）、`git status --short --ignored`、`git check-ignore -v docs/WORKLOG.md`（无输出，docs 已入库）；缺口汇总见 `docs/AUDIT-04.md`。**验证按用户要求跳过浏览器交互（快速模式）** | 未部署 | 根 `README.md` 被忽略、`package.json` 为 pixi.js 遗留、无 CI/测试，均需用户决定 |
 | 2026-11-04 | B13 补齐仓库内容 | 已完成 | `a19888f` | `git mv` 8 个脚本到 `tools/art/`；`py_compile` 通过；在 `%TEMP%` 下运行两个 manifest 生成器，均正确定位 `demo/assets/...`（生成物仅时间戳变化，已还原）；`deploy.py` 删除 `_scripts` 过滤后打包仍 153 个文件；`demo/assets/char/README.txt` 与 ROADMAP 路径引用已同步。Lua 脚本未实际执行（需 Aseprite，快速模式不做）。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | Lua 脚本仍要求「以仓库根为工作目录」（已写入 SETUP）；`.gitignore` 未加 `__pycache__`（用户文件不改写） |
 | 2026-11-04 | B14 前置条件文档化 | 已完成 | `9eaa3fe` | 新增 `docs/SETUP.md`：环境版本（Node 24.19.0 / Python 3.12.10）、Aseprite 路径与 Lua 运行方式、`aliyun-ab` SSH 别名与自检、远程 releases+软链结构、部署/备份/回滚命令、10 类常见故障（含 `tar czhf`）。路径与迁移后的 `tools/art/` 一致。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | SSH 主机/IP 属既有信息已文档化；私钥正文未写入 |
-| 2026-11-04 | B15 克隆验证 | 已完成 | 见本行提交 | 克隆到 `%TEMP%\pixel-farm-clone-20261104120217`：`git ls-files` 174 条与源仓库 `Compare-Object` 无差异；`demo/play.html`、`assets/sv|char/manifest.json`、`tools/art/gen_all.lua`、`deploy.py` 齐全；内联 module `node --check` 通过；`py_compile` 通过；克隆内打包 153 文件；在 `%TEMP%` 运行两个 manifest 生成器成功；`demo/_scripts` 不存在、`tools/art` 8 个文件；`deploy.py` 无 `_scripts` 引用。因无 `--dry-run`，未执行上传，也未 push。差异：源工作区 `.screenshots/`（空目录）与 `.trae-html-share-packages/*.zip`（被忽略）不在克隆中，均非必需。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 克隆者仍需本机 SSH 别名/密钥与 Aseprite（已写入 SETUP）；无 CI/测试 |
+| 2026-11-04 | B15 克隆验证 | 已完成 | `320f378` | 克隆到 `%TEMP%\pixel-farm-clone-20261104120217`：`git ls-files` 174 条与源仓库 `Compare-Object` 无差异；`demo/play.html`、`assets/sv|char/manifest.json`、`tools/art/gen_all.lua`、`deploy.py` 齐全；内联 module `node --check` 通过；`py_compile` 通过；克隆内打包 153 文件；在 `%TEMP%` 运行两个 manifest 生成器成功；`demo/_scripts` 不存在、`tools/art` 8 个文件；`deploy.py` 无 `_scripts` 引用。因无 `--dry-run`，未执行上传，也未 push。差异：源工作区 `.screenshots/`（空目录）与 `.trae-html-share-packages/*.zip`（被忽略）不在克隆中，均非必需。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 克隆者仍需本机 SSH 别名/密钥与 Aseprite（已写入 SETUP）；无 CI/测试 |
+
+**第 4 批次部署记录（2026-11-04）**
+
+| 项 | 结果 |
+| --- | --- |
+| 远程备份 | `/tmp/play.bykc.click-backup-202611041203-full.tgz`（42K，`tar czhf` 解引用软链） |
+| 部署方式 | `python deploy.py`（release + 软链原子切换），release `20261104120319` |
+| 打包 | 153 个文件 / 93.2 KB。B13 把脚本移出 `demo/` 并删掉 `deploy.py` 的 `_scripts` 过滤，**发布内容与上一版一致**（脚本此前已被 B11 排除，线上无新增/缺失文件） |
+| 发布探测 | `https://play.bykc.click/play.html` 200 / 63623B；`https://play.bykc.click/assets/sv/manifest.json` 200 / 2221B（快速模式仅查这两项） |
+| 上一版 | `20261104114950`；当前保留 3 版（`20261104120319` / `20261104114950` / `20261104111000`） |
+| 回滚命令 | `ssh aliyun-ab "ln -sfn /var/www/play.bykc.click.releases/20261104114950 /var/www/play.bykc.click"`；或从 `/tmp/play.bykc.click-backup-202611041203-full.tgz` 恢复 |
+| 备份注意 | 软链 docroot 必须 `tar czhf`（`-h`），否则只打包 147B 链接本体 |
 
 
