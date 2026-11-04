@@ -101,4 +101,12 @@
 | 上一版 | `20261104111000` |
 | 回滚命令 | `ssh aliyun-ab "ln -sfn /var/www/play.bykc.click.releases/20261104111000 /var/www/play.bykc.click"`；或解压 `/tmp/play.bykc.click-backup-202611041149-full.tgz` |
 
+**_scripts 去留调查（2026-11-04，结论：保留）**
+
+- 盘点：`demo/_scripts/` 共 8 个文件，均为开发期资产生成脚本——6 个 Aseprite Lua（`gen_all` / `gen_chars_4dir` / `gen_more_chars` / `gen_props` / `gen_villager` / `gen_villager_16`，输出到 `demo/assets/sv|char`）+ 2 个 manifest 生成器（`gen_sv_manifest.py` / `gen_char_manifest.py`）。
+- 引用情况：运行时（`play.html`、`gallery.html`）与部署脚本均不引用 `_scripts/`；B11 已将其排除出发布包（153 文件）。
+- 跟踪状态：`git ls-files demo/_scripts` 返回 8 条，全部已跟踪，删除可从历史恢复。
+- 结论：**不过时，不删除**。Lua 脚本是 ROADMAP「美术与内容规划」中唯一的 PNG 生成管线（不是被 manifest 生成器替代，而是互补），B1 刚修过其路径；manifest 生成器用于新增素材时登记。B11 的打包排除规则继续保留。
+- 建议：后续可把 `_scripts/` 移出 `demo/`（如 `tools/art/`），发布包自然不含脚本，届时可删掉排除逻辑。
+
 
