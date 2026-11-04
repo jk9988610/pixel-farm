@@ -23,6 +23,7 @@ python -m http.server 8772 --directory demo
 ## 开发与发布
 
 ```powershell
+python tools/check_repo.py               # 仓库烟雾检查（发布前必跑）
 python tools/art/gen_sv_manifest.py      # 新增场景素材后重建索引
 python tools/art/gen_char_manifest.py    # 新增角色帧后重建索引
 python deploy.py                         # 原子部署（需本机 SSH 别名 aliyun-ab）

@@ -140,6 +140,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-04 | B16 根 README 与忽略规则 | 已完成 | `2e4a54c` | `.gitignore` 移除 `README.md` 一行；`git check-ignore -v README.md` 无输出（退出码 1）；新增根 `README.md`（项目简介、本地运行、操作、docs 三链接、素材/部署入口、零依赖说明）。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | README 操作键位先写 `1`–`3`，B20 扩到 5 作物时同步更新 |
 | 2026-11-04 | B17 pixi.js 遗留 package.json | 已完成（按规则保留） | `c7e34c5` | 取证：`git ls-files package.json` 已跟踪；`git grep -n -i 'package\.json'` 命中 README / AUDIT-04 / PLAN-04 / PLAN-05 / ROADMAP / SETUP / WORKLOG 共 15 处，均为说明性引用，无脚本/部署依赖。按用户「发现引用则保留并加注」规则 **不删除**；`SETUP.md` 补充「可 `git rm` 且历史可恢复」，README 已注明勿 `npm install`。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 若你确认无保留价值，可下一批次 `git rm package.json` 并同步清理文档引用 |
-| 2026-11-04 | B18 忽略与换行 | 已完成 | 见本行提交 | `.gitignore` 增 `__pycache__/`、`*.pyc`、`.pytest_cache/`；新增 `.gitattributes`（`* text=auto`、`*.png binary`、`*.zip binary`）。`git check-ignore -v` 命中三类缓存；`git check-attr` 显示 PNG/ZIP `binary: set`、README `text: auto`。SETUP 更新 `__pycache__` 说明并补 LF→CRLF 故障行。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 未主动重写全仓换行，历史文件首次规范化仍可能提示一次 |
+| 2026-11-04 | B18 忽略与换行 | 已完成 | `1b1b751` + `1b250da` | `.gitignore` 增 `__pycache__/`、`*.pyc`、`.pytest_cache/`；新增 `.gitattributes`（`* text=auto`、`*.png binary`、`*.zip binary`）。首次提交发现 `.gitattributes` 本身被旧规则忽略，追加 `1b250da` 移除忽略项后入库。`git check-ignore -v` 命中三类缓存；`git check-attr` 显示 PNG/ZIP `binary: set`、README `text: auto`。SETUP 更新 `__pycache__` 说明并补 LF→CRLF 故障行。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 未主动重写全仓换行，历史文件首次规范化仍可能提示一次 |
+| 2026-11-04 | B19 仓库烟雾检查 | 已完成 | 见本行提交 | 新增 `tools/check_repo.py`；首次运行 `python tools/check_repo.py` 退出 0，5/5 通过（play.html 63623B / sv 12 项 3 分类 / char 5 角色 90 帧 / art 8 脚本 / 入口 6 文件）；在临时副本删除 `gen_villager_16.lua` 后退出 1 并输出缺失项，失败路径有效。README 与 SETUP 已写入用法。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 无 |
 
 

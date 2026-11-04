@@ -93,7 +93,12 @@ node --check "$env:TEMP\play-check.mjs"
 
 # 2) Python 语法检查
 python -m py_compile deploy.py deploy-legacy.py tools/art/gen_sv_manifest.py tools/art/gen_char_manifest.py
+
+# 3) 仓库烟雾检查（发布前必跑，失败退出码 1）
+python tools/check_repo.py
 ```
+
+`check_repo.py` 会核对：`play.html` 关键引用、`assets/sv/manifest.json` 的 `total` 与分类条目/磁盘 PNG 是否一致、`assets/char/manifest.json` 的每个帧文件是否存在、`tools/art/` 8 个脚本是否齐全、入口与发布文件是否齐全。
 
 `py_compile` 会生成 `__pycache__/`，已被 `.gitignore` 忽略，不要提交。
 
