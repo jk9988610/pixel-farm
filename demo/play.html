@@ -82,7 +82,7 @@
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
   <div>种子: <span id="seedname">萝卜</span></div>
-  <div class="key">1/2/3 选种 · 空格 播种/收获</div>
+  <div class="key">1/2/3 选种 · 空格 播种/收获 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -254,6 +254,7 @@ function togglePause() {
     keys.clear();
     actionQueued = false;
     resetTouch();
+    saveGame();
   } else if (gameState === 'paused') {
     gameState = 'playing';
   }
@@ -285,7 +286,7 @@ function plotPos(i) {
 
 function nearestPlot() {
   if (!player) return -1;
-  let best = -1, bd = 32;
+  let best = -1, bd = 76;
   for (let i = 0; i < plots.length; i++) {
     const [x, y] = plotPos(i);
     const d = Math.hypot(player.x - (x + FARM_CELL / 2), player.y - (y + FARM_CELL / 2));
@@ -297,7 +298,10 @@ function nearestPlot() {
 function updateFarm(dt) {
   farmTime += dt;
   for (const p of plots) {
-    if (p.state === 'growing' && farmTime - p.start >= CROPS[p.crop].grow) p.state = 'ready';
+    if (p.state === 'growing' && farmTime - p.start >= CROPS[p.crop].grow) {
+      p.state = 'ready';
+      saveDirty = true;
+    }
   }
 }
 
@@ -318,6 +322,7 @@ function farmAction() {
     const ups = gainXp(c.xp);
     if (ups > 0) showLevelUp();
     updateFarmHud();
+    saveGame();
     return;
   }
   if (p.state === 'growing') {
@@ -336,6 +341,7 @@ function farmAction() {
   const [x, y] = plotPos(i);
   popText(x + FARM_CELL / 2, y + 4, '播种 ' + c.name, '#9fe07a', 10);
   updateFarmHud();
+  saveGame();
 }
 
 function updateFarmHud() {
@@ -343,6 +349,86 @@ function updateFarmHud() {
   $('coins').textContent = coins;
   $('seedname').textContent = c.name + ' (' + c.cost + '金/' + c.grow + 's)';
 }
+
+// ===== 存档 v1 (localStorage) =====
+// 清档方式: 浏览器控制台执行 localStorage.removeItem('pixel-farm-save-v1') 后刷新
+const SAVE_KEY = 'pixel-farm-save-v1';
+const SAVE_VERSION = 1;
+const PLAYER_STAT_KEYS = ['maxHp', 'hp', 'speed', 'dmg', 'atkSpeed', 'projSpeed', 'projCount', 'pierce', 'critChance', 'critMul', 'knives', 'boomerang', 'laser'];
+let pendingStats = null;
+let saveDirty = false;
+let saveTimer = 0;
+let saveReady = false;
+
+function isNum(v) { return typeof v === 'number' && isFinite(v); }
+
+function snapshotStats(target) {
+  const s = {};
+  for (const k of PLAYER_STAT_KEYS) {
+    if (target && isNum(target[k])) s[k] = target[k];
+  }
+  return s;
+}
+
+function saveGame() {
+  if (!saveReady) return;
+  try {
+    const payload = {
+      version: SAVE_VERSION,
+      savedAt: Date.now(),
+      coins,
+      level,
+      xp,
+      xpNext,
+      selectedCrop,
+      farmTime,
+      plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
+      stats: player ? snapshotStats(player) : (pendingStats || {}),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+    saveDirty = false;
+  } catch (e) {
+    console.warn('存档写入失败', e);
+  }
+}
+
+function loadGame() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s || s.version !== SAVE_VERSION) return false;
+    for (const k of ['coins', 'level', 'xp', 'xpNext', 'selectedCrop', 'farmTime']) {
+      if (!isNum(s[k])) return false;
+    }
+    if (!Array.isArray(s.plots) || s.plots.length !== FARM_COLS * FARM_ROWS) return false;
+    const loadedPlots = s.plots.map((p) => {
+      if (!p || !['empty', 'growing', 'ready'].includes(p.state)) throw new Error('bad plot state');
+      const crop = Math.floor(p.crop);
+      if (crop < 0 || crop >= CROPS.length || !isNum(p.start)) throw new Error('bad plot crop');
+      return { state: p.state, crop, start: p.start };
+    });
+    const stats = (s.stats && typeof s.stats === 'object') ? snapshotStats(s.stats) : {};
+
+    coins = Math.max(0, Math.floor(s.coins));
+    level = Math.max(1, Math.floor(s.level));
+    xp = Math.max(0, Math.floor(s.xp));
+    xpNext = Math.max(1, Math.floor(s.xpNext));
+    selectedCrop = Math.max(0, Math.min(CROPS.length - 1, Math.floor(s.selectedCrop)));
+    farmTime = Math.max(0, s.farmTime);
+    plots = loadedPlots;
+    pendingStats = Object.keys(stats).length ? stats : null;
+    return true;
+  } catch (e) {
+    console.warn('存档读取失败, 使用新档', e);
+    return false;
+  }
+}
+
+window.addEventListener('pagehide', saveGame);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveGame();
+});
 
 function drawCrop(cx, by, c, stage) {
   if (stage === 0) {
@@ -700,6 +786,7 @@ function applyRandomUpgrade() {
   c.apply(player);
   popText(player.x, player.y - 34, '稀有增益: ' + c.name, '#ffd166', 12);
   updateHud();
+  saveGame();
 }
 function nearestEnemyTo(x, y, maxD) {
   let best = null, bd = maxD;
@@ -863,13 +950,25 @@ function addShake(t, mag) {
 }
 
 // ===== 游戏重置 =====
-function reset() {
+function reset(preserveProgress = false) {
+  const prevStats = (preserveProgress && player) ? snapshotStats(player) : null;
   player = new Player();
   // 应用素材角色属性微调 (不同角色差异)
   if (usingChar === 'girl') { player.speed = 100; player.dmg = 6; player.atkSpeed = 0.4; player.maxHp = 80; player.hp = 80; }
   else if (usingChar === 'elder') { player.speed = 60; player.dmg = 12; player.atkSpeed = 0.8; player.maxHp = 130; player.hp = 130; }
   else if (usingChar === 'merchant') { player.speed = 85; player.dmg = 10; player.atkSpeed = 0.6; }
   else if (usingChar === 'child') { player.speed = 110; player.dmg = 5; player.atkSpeed = 0.35; player.maxHp = 70; player.hp = 70; }
+
+  const savedStats = pendingStats;
+  const stats = savedStats || prevStats;
+  if (stats) {
+    for (const k of PLAYER_STAT_KEYS) {
+      if (isNum(stats[k])) player[k] = stats[k];
+    }
+    if (savedStats) player.hp = Math.max(1, Math.min(player.maxHp, isNum(savedStats.hp) ? savedStats.hp : player.maxHp));
+    else if (prevStats) player.hp = player.maxHp;
+  }
+  pendingStats = null;
 
   enemies = [];
   bullets = [];
@@ -882,13 +981,15 @@ function reset() {
   knifeAngle = 0; boomT = 0; laserT = 0;
   booms = [];
   beams = [];
-  level = 1;
-  xp = 0;
-  xpNext = 10;
-  coins = 100;
-  selectedCrop = 0;
-  plots = newPlots();
-  farmTime = 0;
+  if (!preserveProgress) {
+    level = 1;
+    xp = 0;
+    xpNext = 10;
+    coins = 100;
+    selectedCrop = 0;
+    plots = newPlots();
+    farmTime = 0;
+  }
   spawnTimer = 0;
   deadTimer = 0;
   bossT = 60;
@@ -947,11 +1048,13 @@ function pickUpgrade(c) {
   $('levelup').style.display = 'none';
   gameState = 'playing';
   updateHud();
+  saveGame();
 }
 
 // ===== 升级 =====
 function gainXp(n) {
   xp += n;
+  saveDirty = true;
   let ups = 0;
   while (xp >= xpNext) {
     xp -= xpNext;
@@ -981,7 +1084,7 @@ function loop(t) {
 
     if (gameState === 'dead') {
       deadTimer -= dt;
-      if (deadTimer <= 0) reset();
+      if (deadTimer <= 0) { reset(true); saveGame(); }
       render();
       return;
     }
@@ -997,6 +1100,11 @@ function loop(t) {
 
     gameTime += dt;
     updateFarm(dt);
+    saveTimer += dt;
+    if (saveTimer >= 3) {
+      saveTimer = 0;
+      if (saveDirty) saveGame();
+    }
 
     // 生成敌人
     spawnTimer += dt;
@@ -1401,7 +1509,9 @@ function render() {
   await loadAllChars();
 
   // 加载失败也继续 (fallback 色块)
-  reset();
+  loadGame();
+  reset(true);
+  saveReady = true;
   lastT = performance.now();
   requestAnimationFrame(loop);
 })();
