@@ -60,3 +60,15 @@
 2. `_scripts/` 仍被打进发布包（历史行为，本批次未处理）。
 3. 触屏摇杆仍未经真机验证。
 
+**第 2 批次部署记录（2026-11-04）**
+
+| 项 | 结果 |
+| --- | --- |
+| 远程备份 | `/tmp/play.bykc.click-backup-202611041109.tgz`（48K，部署前 tar） |
+| 旧方式确认 | `python deploy-legacy.py`：161 文件 / 104.8 KB，`play.html` HTTP 200 / 55.2 KB（确认原链路可用后才切换） |
+| 回滚逻辑沙箱验证 | 服务器 `/tmp/pf-atomic-test` 模拟「真实目录 → prev-dir → 软链 → 回滚」，输出 `after-switch: NEW` / `after-rollback: OLD`，PASS |
+| 新方式部署 | `python deploy.py`：release `20261104111000`；`/var/www/play.bykc.click` 已变为软链指向该 release；原目录保留为 `releases/prev-dir-20261104111000` |
+| 新方式验证 | `play.html` 200 / 55.2 KB；`assets/sv/manifest.json` 200 / 2114B；`assets/char/manifest.json` 200；`villager/down/walk/frame_0.png` 200；`gallery.html` 200 |
+| 内容抽查 | 线上 `play.html` 含 `pixel-farm-lock-v1`、`startNight`、`清晨结算`、`pixel-farm-save-v1` |
+| 回滚方式 | `ssh aliyun-ab "rm -f /var/www/play.bykc.click && mv /var/www/play.bykc.click.releases/prev-dir-20261104111000 /var/www/play.bykc.click"`；或解压备份 tgz |
+
