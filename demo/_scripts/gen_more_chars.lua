@@ -1,5 +1,6 @@
 
-local OUT = "E:/tools/pixijs-dev/demo/assets/char/"
+-- 相对路径：请在仓库根目录（pixel-farm/）运行本脚本
+local OUT = "demo/assets/char/"
 
 local function C(r,g,b) return Color{r=r,g=g,b=b} end
 local SKIN    = C(242,201,160)

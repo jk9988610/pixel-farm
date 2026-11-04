@@ -1,5 +1,6 @@
 
-local out_dir = "E:/tools/pixijs-dev/demo/assets/sv/"
+-- 相对路径：请在仓库根目录（pixel-farm/）运行本脚本
+local out_dir = "demo/assets/sv/"
 
 local SKIN     = Color{r=242,g=201,b=160}
 local SKIN_SH  = Color{r=217,g=168,b=124}

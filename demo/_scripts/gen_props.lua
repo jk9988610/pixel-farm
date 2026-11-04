@@ -1,5 +1,6 @@
 
-local out = "E:/tools/pixijs-dev/demo/assets/sv/"
+-- 相对路径：请在仓库根目录（pixel-farm/）运行本脚本
+local out = "demo/assets/sv/"
 
 local function C(r,g,b) return Color{r=r,g=g,b=b,a=255} end
 local TRUNK    = C(90,55,30)

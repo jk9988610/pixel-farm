@@ -1,10 +1,18 @@
 {
   "site": "像素田园",
-  "generated": "2026-11-03 09:23:02",
-  "total": 8,
+  "generated": "2026-11-04 10:04:41",
+  "total": 12,
   "categories": {
     "角色": [],
     "背景": [
+      {
+        "name": "bush",
+        "file": "bush.png",
+        "w": 24,
+        "h": 16,
+        "bytes": 296,
+        "category": "背景"
+      },
       {
         "name": "cloud",
         "file": "cloud.png",
@@ -35,6 +43,22 @@
         "w": 512,
         "h": 160,
         "bytes": 948,
+        "category": "背景"
+      },
+      {
+        "name": "rock",
+        "file": "rock.png",
+        "w": 16,
+        "h": 12,
+        "bytes": 186,
+        "category": "背景"
+      },
+      {
+        "name": "tree",
+        "file": "tree.png",
+        "w": 32,
+        "h": 48,
+        "bytes": 473,
         "category": "背景"
       }
     ],
@@ -69,6 +93,14 @@
         "w": 8,
         "h": 8,
         "bytes": 119,
+        "category": "花卉"
+      },
+      {
+        "name": "flowerbed",
+        "file": "flowerbed.png",
+        "w": 32,
+        "h": 20,
+        "bytes": 176,
         "category": "花卉"
       }
     ]
