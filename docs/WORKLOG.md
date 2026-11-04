@@ -142,6 +142,19 @@
 | 2026-11-04 | B17 pixi.js 遗留 package.json | 已完成（按规则保留） | `c7e34c5` | 取证：`git ls-files package.json` 已跟踪；`git grep -n -i 'package\.json'` 命中 README / AUDIT-04 / PLAN-04 / PLAN-05 / ROADMAP / SETUP / WORKLOG 共 15 处，均为说明性引用，无脚本/部署依赖。按用户「发现引用则保留并加注」规则 **不删除**；`SETUP.md` 补充「可 `git rm` 且历史可恢复」，README 已注明勿 `npm install`。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 若你确认无保留价值，可下一批次 `git rm package.json` 并同步清理文档引用 |
 | 2026-11-04 | B18 忽略与换行 | 已完成 | `1b1b751` + `1b250da` | `.gitignore` 增 `__pycache__/`、`*.pyc`、`.pytest_cache/`；新增 `.gitattributes`（`* text=auto`、`*.png binary`、`*.zip binary`）。首次提交发现 `.gitattributes` 本身被旧规则忽略，追加 `1b250da` 移除忽略项后入库。`git check-ignore -v` 命中三类缓存；`git check-attr` 显示 PNG/ZIP `binary: set`、README `text: auto`。SETUP 更新 `__pycache__` 说明并补 LF→CRLF 故障行。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 未主动重写全仓换行，历史文件首次规范化仍可能提示一次 |
 | 2026-11-04 | B19 仓库烟雾检查 | 已完成 | `05ad03e` | 新增 `tools/check_repo.py`；首次运行 `python tools/check_repo.py` 退出 0，5/5 通过（play.html 63623B / sv 12 项 3 分类 / char 5 角色 90 帧 / art 8 脚本 / 入口 6 文件）；在临时副本删除 `gen_villager_16.lua` 后退出 1 并输出缺失项，失败路径有效。README 与 SETUP 已写入用法。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 无 |
-| 2026-11-04 | B20 作物品类扩展 + 价格浮动 | 已完成 | 见本行提交 | `CROPS` 由 3 种扩到 5 种（玉米：种子 6 / 基础卖价 15 / 14s / 3XP；南瓜：45 / 120 / 64s / 16XP）；初始种子 `[5,3,2,2,0]`；商店新增行情列，显示今日卖价与 ↑/↓/=；`1`–`5` 选种；旧存档 3 长度库存数组自动补 0（`5,3,2` → `5,3,2,0,0`），不丢原数量；卖出按 `sellPrice(i)`（`dayNumber` 确定性 ±10%）结算。验证：内联 module `node --check` 通过；`python tools/check_repo.py` 5/5；价格公式抽检 day1 `26,40,64,16,126` → day2 `25,36,71,16,112`；旧档补零分支通过。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 未实机调参；移动端触屏适配留待下一批次 |
+| 2026-11-04 | B20 作物品类扩展 + 价格浮动 | 已完成 | `6e84cc9` | `CROPS` 由 3 种扩到 5 种（玉米：种子 6 / 基础卖价 15 / 14s / 3XP；南瓜：45 / 120 / 64s / 16XP）；初始种子 `[5,3,2,2,0]`；商店新增行情列，显示今日卖价与 ↑/↓/=；`1`–`5` 选种；旧存档 3 长度库存数组自动补 0（`5,3,2` → `5,3,2,0,0`），不丢原数量；卖出按 `sellPrice(i)`（`dayNumber` 确定性 ±10%）结算。验证：内联 module `node --check` 通过；`python tools/check_repo.py` 5/5；价格公式抽检 day1 `26,40,64,16,126` → day2 `25,36,71,16,112`；旧档补零分支通过。**验证按用户要求跳过浏览器（快速模式）** | 未部署 | 未实机调参；移动端触屏适配留待下一批次 |
+
+
+**第 5 批次部署记录（2026-11-04）**
+
+| 项 | 结果 |
+| --- | --- |
+| 部署前检查 | `python tools/check_repo.py` 5/5 通过（play.html 65193B / sv 12 项 / char 90 帧 / art 8 脚本 / 入口 6 文件），退出码 0 |
+| 远程备份 | `/tmp/play.bykc.click-backup-202611041347-full.tgz`（42K，`tar czhf`） |
+| 部署方式 | `python deploy.py`（release + 软链原子切换），release `20261104134732` |
+| 打包 | 153 个文件 / 93.8 KB；B20 仅改 `demo/play.html`（63623B → 65193B），文件数不变 |
+| 发布探测 | `https://play.bykc.click/play.html` 200 / 65193B；`https://play.bykc.click/assets/sv/manifest.json` 200 / 2221B |
+| 上一版 | `20261104120319`；当前保留 3 版（`20261104134732` / `20261104120319` / `20261104114950`） |
+| 回滚命令 | `ssh aliyun-ab "ln -sfn /var/www/play.bykc.click.releases/20261104120319 /var/www/play.bykc.click"`；或从 `/tmp/play.bykc.click-backup-202611041347-full.tgz` 恢复 |
 
 
