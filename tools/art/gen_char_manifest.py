@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import os, json, time
 
-CHAR_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'char')
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CHAR_DIR = os.path.join(ROOT, 'demo', 'assets', 'char')
 MANIFEST = os.path.join(CHAR_DIR, 'manifest.json')
 
 DIRECTIONS = ['down', 'up', 'side']

@@ -10,7 +10,7 @@ play.html 启动时会读取 manifest.json, 按需加载 PNG 并播放动画。
 ----------------------------------------------------------------
 
 assets/char/
-├── manifest.json            索引文件 (由 _scripts/gen_char_manifest.py 生成, 勿手改)
+├── manifest.json            索引文件 (由 tools/art/gen_char_manifest.py 生成, 勿手改)
 ├── README.txt               本文件
 └── <角色名>/                一个文件夹 = 一个角色
     ├── idle/                站立 (无方向, 通用)
@@ -64,7 +64,7 @@ assets/char/
 manifest.json
 ----------------------------------------------------------------
 
-由 _scripts/gen_char_manifest.py 扫描本目录自动生成, 结构:
+由 tools/art/gen_char_manifest.py 扫描本目录自动生成, 结构:
 
 {
   "generated": "生成时间",
@@ -88,8 +88,8 @@ manifest.json
 
 1. 画图: 在 <角色名>/<方向>/<动作>/ 下放 frame_*.png
 2. 生成索引:
-       python demo/_scripts/gen_char_manifest.py
-   (脚本内 CHAR_DIR 硬编码, 如路径变了需改脚本第 4 行)
+       python tools/art/gen_char_manifest.py
+   (脚本从自身位置推导仓库根, 可在任意目录执行)
 3. 刷新 play.html 即可看到新角色/新动画
 
 ----------------------------------------------------------------

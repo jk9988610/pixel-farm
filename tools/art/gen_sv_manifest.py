@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""扫描 assets/sv 下的 PNG, 生成 gallery.html 使用的 manifest.json"""
+"""扫描 demo/assets/sv 下的 PNG, 生成 gallery.html 使用的 manifest.json"""
 import os, json, time, struct
 
-SV_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'sv')
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SV_DIR = os.path.join(ROOT, 'demo', 'assets', 'sv')
 MANIFEST = os.path.join(SV_DIR, 'manifest.json')
 
 # 画廊目前只有「背景 / 花卉」两个分类标签, 新素材按语义归入其一

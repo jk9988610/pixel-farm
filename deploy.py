@@ -95,7 +95,6 @@ def main():
         n = 0
         with zipfile.ZipFile(ZIP_PATH, 'w', zipfile.ZIP_DEFLATED) as z:
             for rt, ds, fs in os.walk(DEMO_DIR):
-                ds[:] = [d for d in ds if d != '_scripts']   # 生成脚本不进发布包
                 for f in fs:
                     full = os.path.join(rt, f)
                     rel = os.path.relpath(full, DEMO_DIR).replace(os.sep, '/')

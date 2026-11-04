@@ -57,7 +57,7 @@ python -m http.server 8000 --directory demo
 | `demo/play.html` | 全部玩法逻辑与渲染 | 1171 行 / 38 KB |
 | `demo/assets/char/` | 5 个角色 × 3 方向 × (idle 2 + walk 4)，另有顶层通用帧与 jump 帧 | 135 张 PNG |
 | `demo/assets/sv/` | 场景素材（地面、远景、云、花草、树、灌木、石头、花圃） | 12 张 PNG |
-| `demo/_scripts/` | Aseprite Lua 生成脚本 + manifest 生成脚本 | 7 个脚本 |
+| `tools/art/` | Aseprite Lua 生成脚本 + manifest 生成脚本（不参与部署） | 8 个脚本 |
 
 角色帧实测规格：`16×32`；场景规格：地面 `32×32`、树 `32×48`、花圃 `32×20`、石头 `16×12`、灌木 `24×16`、远景 `512×160`。
 
@@ -179,7 +179,7 @@ python -m http.server 8000 --directory demo
 ### 4.1 工具链
 
 - **唯一像素美术工具**：Aseprite `1.3.18.6-x64`，路径 `E:\tools\Aseprite-1.3.18.6-x64\aseprite.exe`。
-- 现有素材由 Aseprite Lua 脚本程序化生成（`demo/_scripts/gen_*.lua`），通过 `Sprite/Image/drawPixel/saveCopyAs` 输出 PNG；脚本运行于 Aseprite 的 Lua 环境，不是独立命令行工具。
+- 现有素材由 Aseprite Lua 脚本程序化生成（`tools/art/gen_*.lua`），通过 `Sprite/Image/drawPixel/saveCopyAs` 输出 PNG；脚本运行于 Aseprite 的 Lua 环境，不是独立命令行工具，需在仓库根目录执行（输出路径相对仓库根）。
 - 规划中的新增像素素材均要求：**Aseprite 源文件（`.aseprite`）+ 导出 PNG**，源文件建议放仓库 `art/`（不参与部署），导出目标放 `demo/assets/`。
 - 建议逐步从「纯脚本生成」过渡到「`.aseprite` 手工精修 + 脚本批量导出」，脚本负责重复劳动，手工负责角色辨识度与动画节奏。
 
@@ -221,7 +221,7 @@ python -m http.server 8000 --directory demo
 
 3. 由 manifest 生成脚本扫描导出目录，写入 `demo/assets/char/manifest.json` / `demo/assets/sv/manifest.json`。
 4. 提交前校验：帧尺寸一致、透明背景、锚点一致、文件名 `frame_N.png` 连续。
-5. 部署时排除 `.aseprite` 源文件与 `_scripts/`。
+5. 部署只打包 `demo/`：`tools/art/`、`.aseprite` 源文件天然不在发布包。
 
 ---
 
