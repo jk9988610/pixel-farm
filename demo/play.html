@@ -38,6 +38,11 @@
     background: rgba(0,0,0,0.85); padding: 6px;
     display: none; z-index: 20; line-height: 1.5;
   }
+  #hint {
+    position: fixed; bottom: 12px; right: 12px;
+    color: #dfe8c8; font-size: 10px; text-shadow: 1px 1px 2px #000;
+    z-index: 10; pointer-events: none;
+  }
   #levelup {
     position: fixed; inset: 0; z-index: 30;
     display: none; flex-direction: column;
@@ -65,6 +70,7 @@
 </div>
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
+<div id="hint">WASD / 方向键 移动 · Esc 暂停 · 触屏可拖动左下摇杆</div>
 <div id="err"></div>
 <div id="levelup"></div>
 
@@ -79,7 +85,6 @@ window.addEventListener('error', (e) => {
 const LOGIC_W = 640, LOGIC_H = 360;
 const WORLD_W = 1600, WORLD_H = 1200;
 const ATTACK_RANGE = 220;
-const KEEP_DIST = 100;
 const RESPAWN_DELAY = 2.0;
 
 const canvas = document.getElementById('game');
@@ -160,7 +165,77 @@ let xp = 0;
 let xpNext = 10;
 let spawnTimer = 0;
 let deadTimer = 0;
-let gameState = 'playing';   // playing / dead
+let gameState = 'playing';   // playing / paused / levelup / dead
+
+// ===== 输入 (键盘 + 触屏摇杆) =====
+const keys = new Set();
+const MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+const touch = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+
+window.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if (MOVE_KEYS.has(k) || k === ' ') e.preventDefault();
+  if (k === 'escape') { togglePause(); return; }
+  keys.add(k);
+});
+window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => { keys.clear(); resetTouch(); });
+
+function toLogic(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (LOGIC_W / r.width),
+    y: (e.clientY - r.top) * (LOGIC_H / r.height),
+  };
+}
+function resetTouch() {
+  touch.active = false; touch.id = null; touch.dx = 0; touch.dy = 0;
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (touch.id !== null) return;
+  const p = toLogic(e);
+  touch.active = true; touch.id = e.pointerId;
+  touch.ox = p.x; touch.oy = p.y; touch.dx = 0; touch.dy = 0;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== touch.id) return;
+  const p = toLogic(e);
+  const dx = p.x - touch.ox, dy = p.y - touch.oy;
+  const len = Math.hypot(dx, dy);
+  if (len < 6) { touch.dx = 0; touch.dy = 0; return; }
+  touch.dx = dx / len; touch.dy = dy / len;
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (e.pointerId === touch.id) resetTouch();
+});
+canvas.addEventListener('pointercancel', (e) => {
+  if (e.pointerId === touch.id) resetTouch();
+});
+
+function readMoveDir() {
+  let dx = 0, dy = 0;
+  if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+  if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+  if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+  if (keys.has('d') || keys.has('arrowright')) dx += 1;
+  if (dx || dy) {
+    const l = Math.hypot(dx, dy) || 1;
+    return [dx / l, dy / l];
+  }
+  if (touch.active && (touch.dx || touch.dy)) return [touch.dx, touch.dy];
+  return [0, 0];
+}
+
+function togglePause() {
+  if (gameState === 'playing') {
+    gameState = 'paused';
+    keys.clear();
+    resetTouch();
+  } else if (gameState === 'paused') {
+    gameState = 'playing';
+  }
+}
 
 // ===== HUD =====
 const $ = id => document.getElementById(id);
@@ -201,84 +276,12 @@ class Player {
     this.frameIdx = 0;
     this.frameTimer = 0;
     this.state = 'idle';
-    this.aiDir = [0, 0];
-    this.aiTimer = 0;
-  }
-
-  aiMove(dt) {
-    // 收集附近敌人
-    let nearest = null, nearestD = 9999;
-    let avgFx = 0, avgFy = 0, closeN = 0;
-
-    for (const e of enemies) {
-      const dx = e.x - this.x;
-      const dy = e.y - this.y;
-      const d = Math.hypot(dx, dy);
-      if (d < nearestD) { nearestD = d; nearest = e; }
-      if (d < 130) {
-        closeN++;
-        const w = 1 / (d + 1);
-        avgFx += dx * w;
-        avgFy += dy * w;
-      }
-    }
-
-    let dx = 0, dy = 0;
-
-    if (closeN > 0) {
-      // 有威胁: 优先远离 + 侧移
-      const l = Math.hypot(avgFx, avgFy) || 1;
-      dx = -avgFx / l;
-      dy = -avgFy / l;
-      // 加一点侧移, 避免贴着跑
-      const perpX = -dy, perpY = dx;
-      const sideSign = (Math.floor(gameTime * 2) % 2 === 0) ? 1 : -1;
-      dx += perpX * 0.6 * sideSign;
-      dy += perpY * 0.6 * sideSign;
-    } else if (nearest && nearestD > ATTACK_RANGE * 1.4) {
-      // 太远: 追击
-      const l = Math.hypot(nearest.x - this.x, nearest.y - this.y) || 1;
-      dx = (nearest.x - this.x) / l;
-      dy = (nearest.y - this.y) / l;
-    } else if (nearest && nearestD < KEEP_DIST) {
-      // 太近: 后退
-      const l = Math.hypot(nearest.x - this.x, nearest.y - this.y) || 1;
-      dx = (this.x - nearest.x) / l;
-      dy = (this.y - nearest.y) / l;
-    } else {
-      // 合适距离: 环绕
-      if (nearest) {
-        const ang = Math.atan2(this.y - nearest.y, this.x - nearest.x) + 0.3;
-        dx = Math.cos(ang);
-        dy = Math.sin(ang);
-      } else {
-        // 无敌人: 随机游走
-        this.aiTimer -= dt;
-        if (this.aiTimer <= 0) {
-          const a = Math.random() * Math.PI * 2;
-          this.aiDir = [Math.cos(a), Math.sin(a)];
-          this.aiTimer = 1.5 + Math.random() * 1.5;
-        }
-        dx = this.aiDir[0];
-        dy = this.aiDir[1];
-      }
-    }
-
-    // 边界回避
-    const M = 100;
-    if (this.x < M) dx += (M - this.x) / M * 2;
-    if (this.x > WORLD_W - M) dx -= (this.x - (WORLD_W - M)) / M * 2;
-    if (this.y < M) dy += (M - this.y) / M * 2;
-    if (this.y > WORLD_H - M) dy -= (this.y - (WORLD_H - M)) / M * 2;
-
-    const l = Math.hypot(dx, dy) || 1;
-    return [dx / l, dy / l];
   }
 
   update(dt) {
     if (this.iframe > 0) this.iframe -= dt;
 
-    const [dx, dy] = this.aiMove(dt);
+    const [dx, dy] = readMoveDir();
     const moving = Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01;
 
     if (moving) {
@@ -775,6 +778,11 @@ function loop(t) {
     const dt = Math.min(0.05, (t - lastT) / 1000);
     lastT = t;
 
+    if (gameState === 'paused') {
+      render();
+      return;
+    }
+
     if (gameState === 'dead') {
       deadTimer -= dt;
       if (deadTimer <= 0) reset();
@@ -1133,6 +1141,36 @@ function render() {
   ctx.globalAlpha = 1;
 
   ctx.restore();
+
+  // 触屏摇杆
+  if (touch.active) {
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#0b1408';
+    ctx.beginPath();
+    ctx.arc(touch.ox, touch.oy, 28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#dfe8c8';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#7df9ff';
+    ctx.beginPath();
+    ctx.arc(touch.ox + touch.dx * 22, touch.oy + touch.dy * 22, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // 暂停提示
+  if (gameState === 'paused') {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 20px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('已暂停', LOGIC_W / 2, LOGIC_H / 2 - 8);
+    ctx.fillStyle = '#dfe8c8';
+    ctx.font = '12px Courier New';
+    ctx.fillText('按 Esc 继续', LOGIC_W / 2, LOGIC_H / 2 + 20);
+  }
 
   // 死亡提示
   if (gameState === 'dead') {
