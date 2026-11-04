@@ -80,7 +80,6 @@ playground/src/*.playground.ts
 .github/
 .vscode/
 .editorconfig
-.gitattributes
 .huskyrc
 .npmrc
 .nvmrc
