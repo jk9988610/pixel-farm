@@ -93,11 +93,15 @@
   .ptitle { color: #ffd166; font-size: 16px; text-align: center; margin-bottom: 8px; }
   .coinline { color: #dfe8c8; text-align: center; margin-bottom: 8px; }
   .shoprow {
-    display: grid; grid-template-columns: 52px 78px 1fr 96px;
+    display: grid; grid-template-columns: 44px 74px 1fr 54px 118px;
     gap: 6px; align-items: center;
     padding: 4px 0; border-top: 1px solid #2c3a4c;
   }
   .shoprow.head { color: #8899aa; border-top: 0; }
+  .shoprow .trend { text-align: center; font-size: 10px; }
+  .trend.up { color: #9fe07a; }
+  .trend.down { color: #ff8f6b; }
+  .trend.flat { color: #8899aa; }
   .srow {
     display: grid; grid-template-columns: 1fr auto;
     gap: 10px; padding: 5px 0; border-top: 1px solid #2c3a4c;
@@ -127,10 +131,10 @@
 <div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · Esc 暂停</div>
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
-  <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2</span></div>
-  <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0</span></div>
+  <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2 / 玉米 2 / 南瓜 0</span></div>
+  <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0 / 玉米 0 / 南瓜 0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
-  <div class="key">1/2/3 选种 · 空格 播种/收获 · B 商店 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -142,8 +146,8 @@
 <div id="shop" class="overlay">
   <div class="panel">
     <div class="ptitle">种子商店</div>
-    <div class="coinline">金币: <span id="shopcoins">100</span></div>
-    <div class="shoprow head"><span>作物</span><span>买种子</span><span>持有</span><span>卖出</span></div>
+    <div class="coinline">金币: <span id="shopcoins">100</span> · 行情每日浮动</div>
+    <div class="shoprow head"><span>作物</span><span>买种子</span><span>持有</span><span>行情</span><span>卖出</span></div>
     <div id="shoprows"></div>
     <div id="shopmsg" class="msg"></div>
     <button id="shopclose" class="close">关闭（B / Esc）</button>
@@ -272,7 +276,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'b') { toggleShop(); return; }
   if (k === 'enter') { closeSettlement(); return; }
   if (k === ' ') { actionQueued = true; return; }
-  if (k === '1' || k === '2' || k === '3') {
+  if (k >= '1' && k <= String(Math.min(9, CROPS.length))) {
     selectedCrop = Number(k) - 1;
     updateFarmHud();
     return;
@@ -348,10 +352,27 @@ const FARM_W = FARM_COLS * FARM_CELL + (FARM_COLS - 1) * FARM_GAP;
 const FARM_X0 = Math.round(WORLD_W / 2 - FARM_W / 2);
 const FARM_Y0 = WORLD_H / 2 + 52;
 const CROPS = [
-  { id: 'carrot', name: '萝卜', cost: 10, sell: 24, grow: 20, xp: 4,  color: '#f28c28' },
-  { id: 'wheat',  name: '小麦', cost: 16, sell: 40, grow: 32, xp: 6,  color: '#e8c547' },
-  { id: 'tomato', name: '番茄', cost: 26, sell: 70, grow: 48, xp: 10, color: '#e04a3a' },
+  { id: 'carrot',  name: '萝卜', cost: 10, sell: 24,  grow: 20, xp: 4,  color: '#f28c28' },
+  { id: 'wheat',   name: '小麦', cost: 16, sell: 40,  grow: 32, xp: 6,  color: '#e8c547' },
+  { id: 'tomato',  name: '番茄', cost: 26, sell: 70,  grow: 48, xp: 10, color: '#e04a3a' },
+  { id: 'corn',    name: '玉米', cost: 6,  sell: 15,  grow: 14, xp: 3,  color: '#f2d34a' },
+  { id: 'pumpkin', name: '南瓜', cost: 45, sell: 120, grow: 64, xp: 16, color: '#e08a1e' },
 ];
+// 行情: 卖出价按「天数 + 品类」确定性浮动 ±10%, 刷新后由 dayNumber 重算, 无需额外存档
+function sellPrice(i, day = dayNumber) {
+  return Math.max(1, Math.round(CROPS[i].sell * (1 + 0.10 * Math.sin(day * 1.3 + i * 1.9))));
+}
+function priceTrend(i) {
+  const now = sellPrice(i);
+  const prev = sellPrice(i, Math.max(1, dayNumber - 1));
+  const diff = now - prev;
+  return {
+    now,
+    diff,
+    arrow: diff > 0 ? '↑' : diff < 0 ? '↓' : '=',
+    cls: diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat',
+  };
+}
 let coins = 100;
 let selectedCrop = 0;
 let farmTime = 0;
@@ -363,9 +384,9 @@ let plots = newPlots();
 
 // ===== 经济: 种子库存 / 作物库存 =====
 // 收获不再直接给金币: 作物进 produce, 需在商店卖出; 播种消耗 seeds, 需在商店买入.
-const START_SEEDS = [5, 3, 2];
+const START_SEEDS = [5, 3, 2, 2, 0];
 let seeds = START_SEEDS.slice();
-let produce = [0, 0, 0];
+let produce = [0, 0, 0, 0, 0];
 let shopOpen = false;
 
 function shopMsg(text, isErr) {
@@ -376,13 +397,17 @@ function shopMsg(text, isErr) {
 
 function renderShop() {
   $('shopcoins').textContent = coins;
-  $('shoprows').innerHTML = CROPS.map((c, i) => `
+  $('shoprows').innerHTML = CROPS.map((c, i) => {
+    const t = priceTrend(i);
+    return `
     <div class="shoprow">
       <span>${c.name}</span>
       <button data-buy="${i}">买 ${c.cost}金</button>
-      <span>种子 ${seeds[i]} / 作物 ${produce[i]}</span>
-      <span><button data-sell="${i}">卖1</button> <button data-sellall="${i}">全卖${c.sell}</button></span>
-    </div>`).join('');
+      <span>种 ${seeds[i]} / 收 ${produce[i]}</span>
+      <span class="trend ${t.cls}">${t.arrow}${t.arrow === '=' ? '' : Math.abs(t.diff)}</span>
+      <span><button data-sell="${i}">卖1 ${t.now}金</button> <button data-sellall="${i}">全卖</button></span>
+    </div>`;
+  }).join('');
 }
 
 function afterTrade() {
@@ -410,9 +435,10 @@ function sellProduce(i, all) {
     shopMsg('没有可卖的 ' + c.name, true);
     return;
   }
+  const price = sellPrice(i);
   produce[i] -= n;
-  coins += c.sell * n;
-  shopMsg('卖出 ' + c.name + ' x' + n + ' +' + (c.sell * n) + ' 金', false);
+  coins += price * n;
+  shopMsg('卖出 ' + c.name + ' x' + n + ' @' + price + ' 金，+' + (price * n) + ' 金', false);
   afterTrade();
 }
 
@@ -665,11 +691,15 @@ function loadGame() {
     phaseT = isNum(s.phaseT) ? Math.max(0, Math.min(len, s.phaseT)) : len;
     nightKills = isNum(s.nightKills) ? Math.max(0, Math.floor(s.nightKills)) : 0;
     dayNumber = isNum(s.dayNumber) ? Math.max(1, Math.floor(s.dayNumber)) : 1;
-    // 库存为后加的可选字段: 旧档缺省给初始种子, 不判损坏
-    const readInv = (v) => (Array.isArray(v) && v.length === CROPS.length && v.every((x) => isNum(x) && x >= 0))
-      ? v.map((x) => Math.floor(x)) : null;
+    // 库存为后加的可选字段: 旧档缺省给初始种子; 品类增加后短数组补 0, 不丢原数量
+    const readInv = (v) => {
+      if (!Array.isArray(v) || !v.every((x) => isNum(x) && x >= 0)) return null;
+      const out = v.slice(0, CROPS.length).map((x) => Math.floor(x));
+      while (out.length < CROPS.length) out.push(0);
+      return out;
+    };
     seeds = readInv(s.seeds) || START_SEEDS.slice();
-    produce = readInv(s.produce) || [0, 0, 0];
+    produce = readInv(s.produce) || new Array(CROPS.length).fill(0);
     plots = loadedPlots;
     pendingStats = Object.keys(stats).length ? stats : null;
     return true;
@@ -719,6 +749,12 @@ function drawCrop(cx, by, c, stage) {
     ctx.fill();
   } else if (c.id === 'wheat') {
     for (let i = -1; i <= 1; i++) ctx.fillRect(cx + i * 4 - 1, by - h - 3, 2, 6);
+  } else if (c.id === 'corn') {
+    ctx.fillRect(cx - 2, by - h - 4, 4, 10);
+  } else if (c.id === 'pumpkin') {
+    ctx.beginPath();
+    ctx.arc(cx, by - 3, 6, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     ctx.beginPath();
     ctx.arc(cx - 4, by - h + 3, 3, 0, Math.PI * 2);
@@ -1261,7 +1297,7 @@ function reset(preserveProgress = false) {
     nightKills = 0;
     dayNumber = 1;
     seeds = START_SEEDS.slice();
-    produce = [0, 0, 0];
+    produce = new Array(CROPS.length).fill(0);
   }
   shopOpen = false;
   $('shop').style.display = 'none';

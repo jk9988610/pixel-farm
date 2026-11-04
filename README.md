@@ -12,7 +12,7 @@ python -m http.server 8772 --directory demo
 
 浏览器打开 <http://localhost:8772/index.html>（不要直接双击 `file://`，浏览器会拦截本地 `fetch`）。
 
-操作：`WASD` / 方向键移动 · `空格` 播种/收获 · `1`–`3` 选种 · `B` 商店 · `Esc` 暂停。
+操作：`WASD` / 方向键移动 · `空格` 播种/收获 · `1`–`5` 选种 · `B` 商店 · `Esc` 暂停。
 
 ## 文档
 
