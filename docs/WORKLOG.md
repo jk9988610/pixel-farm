@@ -72,3 +72,14 @@
 | 内容抽查 | 线上 `play.html` 含 `pixel-farm-lock-v1`、`startNight`、`清晨结算`、`pixel-farm-save-v1` |
 | 回滚方式 | `ssh aliyun-ab "rm -f /var/www/play.bykc.click && mv /var/www/play.bykc.click.releases/prev-dir-20261104111000 /var/www/play.bykc.click"`；或解压备份 tgz |
 
+---
+
+## 第 3 批次
+
+计划文档：`docs/PLAN-03.md`
+
+**批次开始（2026-11-04）**：范围 B8 商店经济最小闭环、B9 清晨结算面板、B10 昼夜数值节奏调整、B11 发布包排除 `_scripts/`。批次边界与「不做的事」见计划文档；本批次不触碰 `demo/assets/char/README.txt`、`_aseprite_test/`、`.gitignore`，不 push。
+
+（条目随实现逐条追加，格式同上）
+
+
