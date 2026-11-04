@@ -43,6 +43,14 @@
     color: #dfe8c8; font-size: 10px; text-shadow: 1px 1px 2px #000;
     z-index: 10; pointer-events: none;
   }
+  #farmhud {
+    position: fixed; left: 10px; bottom: 10px;
+    color: #f4e8c1; font-size: 10px; line-height: 1.7;
+    background: rgba(30,20,10,0.82); border: 2px solid #8b5a2b;
+    padding: 6px 10px; text-shadow: 1px 1px 2px #000;
+    z-index: 10; pointer-events: none;
+  }
+  #farmhud .key { color: #9fe07a; }
   #levelup {
     position: fixed; inset: 0; z-index: 30;
     display: none; flex-direction: column;
@@ -71,6 +79,11 @@
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
 <div id="hint">WASD / 方向键 移动 · Esc 暂停 · 触屏可拖动左下摇杆</div>
+<div id="farmhud">
+  <div>金币: <span id="coins">100</span></div>
+  <div>种子: <span id="seedname">萝卜</span></div>
+  <div class="key">1/2/3 选种 · 空格 播种/收获</div>
+</div>
 <div id="err"></div>
 <div id="levelup"></div>
 
@@ -171,11 +184,19 @@ let gameState = 'playing';   // playing / paused / levelup / dead
 const keys = new Set();
 const MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 const touch = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+let actionQueued = false;
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (MOVE_KEYS.has(k) || k === ' ') e.preventDefault();
+  if (e.repeat) return;
   if (k === 'escape') { togglePause(); return; }
+  if (k === ' ') { actionQueued = true; return; }
+  if (k === '1' || k === '2' || k === '3') {
+    selectedCrop = Number(k) - 1;
+    updateFarmHud();
+    return;
+  }
   keys.add(k);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -231,9 +252,178 @@ function togglePause() {
   if (gameState === 'playing') {
     gameState = 'paused';
     keys.clear();
+    actionQueued = false;
     resetTouch();
   } else if (gameState === 'paused') {
     gameState = 'playing';
+  }
+}
+
+// ===== 农场 =====
+const FARM_COLS = 3, FARM_ROWS = 3, FARM_CELL = 34, FARM_GAP = 2;
+const FARM_W = FARM_COLS * FARM_CELL + (FARM_COLS - 1) * FARM_GAP;
+const FARM_X0 = Math.round(WORLD_W / 2 - FARM_W / 2);
+const FARM_Y0 = WORLD_H / 2 + 52;
+const CROPS = [
+  { id: 'carrot', name: '萝卜', cost: 10, sell: 24, grow: 20, xp: 4,  color: '#f28c28' },
+  { id: 'wheat',  name: '小麦', cost: 16, sell: 40, grow: 32, xp: 6,  color: '#e8c547' },
+  { id: 'tomato', name: '番茄', cost: 26, sell: 70, grow: 48, xp: 10, color: '#e04a3a' },
+];
+let coins = 100;
+let selectedCrop = 0;
+let farmTime = 0;
+
+function newPlots() {
+  return Array.from({ length: FARM_COLS * FARM_ROWS }, () => ({ state: 'empty', crop: 0, start: 0 }));
+}
+let plots = newPlots();
+
+function plotPos(i) {
+  const col = i % FARM_COLS, row = Math.floor(i / FARM_COLS);
+  return [FARM_X0 + col * (FARM_CELL + FARM_GAP), FARM_Y0 + row * (FARM_CELL + FARM_GAP)];
+}
+
+function nearestPlot() {
+  if (!player) return -1;
+  let best = -1, bd = 32;
+  for (let i = 0; i < plots.length; i++) {
+    const [x, y] = plotPos(i);
+    const d = Math.hypot(player.x - (x + FARM_CELL / 2), player.y - (y + FARM_CELL / 2));
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+function updateFarm(dt) {
+  farmTime += dt;
+  for (const p of plots) {
+    if (p.state === 'growing' && farmTime - p.start >= CROPS[p.crop].grow) p.state = 'ready';
+  }
+}
+
+function farmAction() {
+  if (gameState !== 'playing') return;
+  const i = nearestPlot();
+  if (i < 0) {
+    popText(player.x, player.y - 24, '靠近地块再按空格', '#dfe8c8', 10);
+    return;
+  }
+  const p = plots[i];
+  if (p.state === 'ready') {
+    const c = CROPS[p.crop];
+    p.state = 'empty';
+    coins += c.sell;
+    const [x, y] = plotPos(i);
+    popText(x + FARM_CELL / 2, y + 4, '+' + c.sell + '金 +' + c.xp + 'XP', '#ffd166', 11);
+    const ups = gainXp(c.xp);
+    if (ups > 0) showLevelUp();
+    updateFarmHud();
+    return;
+  }
+  if (p.state === 'growing') {
+    popText(player.x, player.y - 24, '还在生长', '#dfe8c8', 10);
+    return;
+  }
+  const c = CROPS[selectedCrop];
+  if (coins < c.cost) {
+    popText(player.x, player.y - 24, '金币不足', '#f66', 10);
+    return;
+  }
+  coins -= c.cost;
+  p.state = 'growing';
+  p.crop = selectedCrop;
+  p.start = farmTime;
+  const [x, y] = plotPos(i);
+  popText(x + FARM_CELL / 2, y + 4, '播种 ' + c.name, '#9fe07a', 10);
+  updateFarmHud();
+}
+
+function updateFarmHud() {
+  const c = CROPS[selectedCrop];
+  $('coins').textContent = coins;
+  $('seedname').textContent = c.name + ' (' + c.cost + '金/' + c.grow + 's)';
+}
+
+function drawCrop(cx, by, c, stage) {
+  if (stage === 0) {
+    ctx.fillStyle = '#3f7a2a';
+    ctx.fillRect(cx - 3, by - 2, 2, 2);
+    ctx.fillRect(cx + 1, by - 2, 2, 2);
+    return;
+  }
+  const h = stage === 1 ? 6 : stage === 2 ? 11 : 15;
+  ctx.strokeStyle = '#4f9c3a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, by);
+  ctx.lineTo(cx, by - h);
+  ctx.stroke();
+  if (stage >= 2) {
+    ctx.fillStyle = '#4f9c3a';
+    ctx.fillRect(cx - 5, by - h * 0.55, 4, 2);
+    ctx.fillRect(cx + 1, by - h * 0.7, 4, 2);
+  }
+  if (stage < 3) return;
+  ctx.fillStyle = c.color;
+  if (c.id === 'carrot') {
+    ctx.beginPath();
+    ctx.moveTo(cx - 3, by - 4);
+    ctx.lineTo(cx + 3, by - 4);
+    ctx.lineTo(cx, by + 4);
+    ctx.closePath();
+    ctx.fill();
+  } else if (c.id === 'wheat') {
+    for (let i = -1; i <= 1; i++) ctx.fillRect(cx + i * 4 - 1, by - h - 3, 2, 6);
+  } else {
+    ctx.beginPath();
+    ctx.arc(cx - 4, by - h + 3, 3, 0, Math.PI * 2);
+    ctx.arc(cx + 4, by - h + 5, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawFarm() {
+  const near = nearestPlot();
+  for (let i = 0; i < plots.length; i++) {
+    const [x, y] = plotPos(i);
+    const sx = x - camX, sy = y - camY;
+    if (sx < -40 || sx > LOGIC_W + 40 || sy < -40 || sy > LOGIC_H + 40) continue;
+    const p = plots[i];
+    ctx.fillStyle = p.state === 'empty' ? '#6b4a2a' : '#563a20';
+    ctx.fillRect(sx, sy, FARM_CELL, FARM_CELL);
+    ctx.strokeStyle = '#3f2a14';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx + 0.5, sy + 0.5, FARM_CELL - 1, FARM_CELL - 1);
+    if (p.state !== 'empty') {
+      const c = CROPS[p.crop];
+      const prog = Math.min(1, (farmTime - p.start) / c.grow);
+      const stage = p.state === 'ready' ? 3 : Math.min(2, Math.floor(prog * 3));
+      drawCrop(sx + FARM_CELL / 2, sy + 28, c, stage);
+    }
+    if (near === i) {
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx + 1, sy + 1, FARM_CELL - 2, FARM_CELL - 2);
+    }
+  }
+  if (near >= 0) {
+    const p = plots[near];
+    const [x, y] = plotPos(near);
+    let label;
+    if (p.state === 'empty') label = '空格 播种';
+    else if (p.state === 'ready') label = '空格 收获';
+    else {
+      const c = CROPS[p.crop];
+      label = '生长中 ' + Math.max(1, Math.ceil(c.grow - (farmTime - p.start))) + 's';
+    }
+    ctx.font = '9px Courier New';
+    ctx.textAlign = 'center';
+    const w = ctx.measureText(label).width + 8;
+    const sx = x - camX, sy = y - camY;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(sx + FARM_CELL / 2 - w / 2, sy - 13, w, 11);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, sx + FARM_CELL / 2, sy - 4);
   }
 }
 
@@ -249,6 +439,7 @@ function updateHud() {
     $('hpfill').style.width = pct + '%';
     $('hptext').textContent = Math.max(0, Math.ceil(player.hp)) + ' / ' + player.maxHp;
   }
+  updateFarmHud();
 }
 
 // ===== 玩家 =====
@@ -694,11 +885,16 @@ function reset() {
   level = 1;
   xp = 0;
   xpNext = 10;
+  coins = 100;
+  selectedCrop = 0;
+  plots = newPlots();
+  farmTime = 0;
   spawnTimer = 0;
   deadTimer = 0;
   bossT = 60;
   shakeT = 0; shakeDur = 0; shakeMag = 0;
   gameState = 'playing';
+  actionQueued = false;
   camX = player.x - LOGIC_W / 2;
   camY = player.y - LOGIC_H / 2;
   camX = Math.max(0, Math.min(WORLD_W - LOGIC_W, camX));
@@ -800,6 +996,7 @@ function loop(t) {
     }
 
     gameTime += dt;
+    updateFarm(dt);
 
     // 生成敌人
     spawnTimer += dt;
@@ -819,6 +1016,7 @@ function loop(t) {
     }
 
     player.update(dt);
+    if (actionQueued) { actionQueued = false; farmAction(); }
     updateWeapons(dt);
 
     // 敌人
@@ -1005,6 +1203,9 @@ function render() {
       ctx.fillRect(sx, sy, gs, gs);
     }
   }
+
+  // 农场地块与作物
+  drawFarm();
 
   // 敌人
   for (const e of enemies) {
