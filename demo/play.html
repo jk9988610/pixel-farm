@@ -200,6 +200,7 @@
   <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2 / 玉米 2 / 南瓜 0</span></div>
   <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0 / 玉米 0 / 南瓜 0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
+  <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
   <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · 自动存档</div>
 </div>
 <div id="err"></div>
@@ -245,6 +246,16 @@
     <div class="srow"><span>恢复体力</span><span id="sk_heal">+0 HP</span></div>
     <div class="srow"><span>当前金币</span><span id="sk_coins">100</span></div>
     <button id="settleok" class="close">确认收工（Enter）</button>
+  </div>
+</div>
+<div id="homemove" class="overlay">
+  <div class="panel">
+    <div class="ptitle">在此安家</div>
+    <div class="srow"><span>搬家距离</span><span id="hm_dist">-</span></div>
+    <div class="srow"><span>方向</span><span id="hm_dir">-</span></div>
+    <div class="msg" id="hm_msg">确认后家园与 9 块地整体迁移到此处；作物生长计时不受影响。</div>
+    <button id="hm_ok" class="close">确认安家（Enter）</button>
+    <button id="hm_cancel" class="close" style="margin-top:6px">取消（Esc）</button>
   </div>
 </div>
 
@@ -444,13 +455,19 @@ window.addEventListener('keydown', (e) => {
     pathTargets = [];
   }
   if (k === 'escape') {
+    if (gameState === 'homemove') { cancelHomeMove(); return; }
     if (shopOpen) { closeShop(); return; }
     togglePause();
     return;
   }
+  if (k === 'h') { openHomeMove(); return; }   // 在此安家: 就地确认后家园与地块整体迁移
   if (k === 'b') { if (gameState === 'playing' || shopOpen) toggleShop(); return; }
   if (k === 't') { cyclePartnerTask(); return; }   // 切换伙伴任务: 跟随战斗 / 守卫家园
-  if (k === 'enter') { closeSettlement(); return; }
+  if (k === 'enter') {
+    if (gameState === 'homemove') { confirmHomeMove(); return; }
+    closeSettlement();
+    return;
+  }
   if (k === ' ') { if (gameState === 'playing') actionQueued = true; return; }
   if (k >= '1' && k <= String(Math.min(9, CROPS.length))) {
     if (gameState === 'levelup') return;   // 选卡期间数字键归升级卡使用
@@ -767,6 +784,9 @@ const DEFAULT_HOME = { x: Math.round(WORLD_W / 2 - FARM_W / 2), y: WORLD_H / 2 +
 const HOME_MAX_X = WORLD_W - FARM_W, HOME_MAX_Y = WORLD_H - FARM_H;
 let home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
 function homeCenter() { return { x: home.x + FARM_W / 2, y: home.y + FARM_H / 2 }; }
+const HOME_MOVE_MIN = 120;                 // 安家最小距离: 太近不允许, 防止原地反复搬迁
+let pendingHomeMove = null;                // 待确认的安家目标 {x,y,dist,dir}
+let homeFx = null;                         // 迁徙平移动画 {fromX,fromY,t,dur}
 const FOLLOW_FAR = 96, FOLLOW_NEAR = 34;   // 跟随舒适距离: 超过远值才追, 小于近值退开
 const GUARD_R = 120;                        // 守卫家园: 只处理进入此半径的敌人
 const CROPS = [
@@ -894,6 +914,9 @@ document.getElementById('shoprows').addEventListener('click', (e) => {
 });
 document.getElementById('shopclose').addEventListener('click', closeShop);
 document.getElementById('settleok').addEventListener('click', closeSettlement);
+document.getElementById('homebtn').addEventListener('click', openHomeMove);
+document.getElementById('hm_ok').addEventListener('click', confirmHomeMove);
+document.getElementById('hm_cancel').addEventListener('click', cancelHomeMove);
 
 // ===== 昼夜双循环 (最小版) =====
 // 白天: 限时种田(不刷怪); 夜晚: 敌潮+Boss; 清晨: 结算金币并清场.
@@ -994,6 +1017,10 @@ function nearestPlot() {
 
 function updateFarm(dt) {
   farmTime += dt;
+  if (homeFx) {
+    homeFx.t += dt;
+    if (homeFx.t >= homeFx.dur) homeFx = null;
+  }
   for (const p of plots) {
     if (p.state === 'growing' && farmTime - p.start >= CROPS[p.crop].grow) {
       p.state = 'ready';
@@ -1047,6 +1074,71 @@ function updateFarmHud() {
   $('seedname').textContent = CROPS.map((c, i) => c.name + ' ' + seeds[i]).join(' / ');
   $('produce').textContent = CROPS.map((c, i) => c.name + ' ' + produce[i]).join(' / ');
   $('nkills').textContent = nightKills;
+}
+
+// ===== 安家 (定居点式: 玩家就地确认, 家园与地块整体迁移) =====
+// 方向文案: 以当前家园中心为原点, 目标在哪个八方向
+function homeDirLabel(dx, dy) {
+  const sectors = ['东', '东南', '南', '西南', '西', '西北', '北', '东北'];
+  const i = ((Math.round((Math.atan2(dy, dx) * 180 / Math.PI) / 45) % 8) + 8) % 8;
+  return sectors[i];
+}
+
+function openHomeMove() {
+  if (gameState !== 'playing') return;
+  const me = activeChar || player;
+  if (!me) return;
+  // 新家园左上角: 以玩家当前位置为新家园中心, 再裁剪保证 9 块地完整落在世界内
+  const nx = Math.max(0, Math.min(HOME_MAX_X, Math.round(me.x - FARM_W / 2)));
+  const ny = Math.max(0, Math.min(HOME_MAX_Y, Math.round(me.y - FARM_H / 2)));
+  const hc = homeCenter();
+  const target = { x: nx + FARM_W / 2, y: ny + FARM_H / 2 };
+  const dx = target.x - hc.x, dy = target.y - hc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < HOME_MOVE_MIN) {
+    popText(me.x, me.y - 32, '离得太近，至少 ' + HOME_MOVE_MIN + 'px', '#f66', 10);
+    return;
+  }
+  pendingHomeMove = { x: nx, y: ny, dist, dir: homeDirLabel(dx, dy) };
+  $('hm_dist').textContent = Math.round(dist) + 'px';
+  $('hm_dir').textContent = pendingHomeMove.dir + '方向';
+  $('homemove').style.display = 'flex';
+  resetInput();
+  pauseGame('homemove');
+}
+
+function cancelHomeMove() {
+  if (gameState !== 'homemove') return;
+  pendingHomeMove = null;
+  $('homemove').style.display = 'none';
+  resumeGame();
+}
+
+function confirmHomeMove() {
+  if (gameState !== 'homemove' || !pendingHomeMove) return;
+  const fromX = home.x, fromY = home.y;
+  home = { x: pendingHomeMove.x, y: pendingHomeMove.y };
+  // 短平移动画: 绘制端从旧位置滑到新位置, 逻辑坐标立即生效
+  homeFx = { fromX, fromY, t: 0, dur: 0.35 };
+  // 守卫伙伴同步到新家园附近, 不留原地
+  if (partner && partner.task === 'guard') {
+    const hc = homeCenter();
+    partner.x = Math.max(20, Math.min(WORLD_W - 20, hc.x + 30));
+    partner.y = Math.max(30, Math.min(WORLD_H - 10, hc.y + 12));
+  }
+  pendingHomeMove = null;
+  $('homemove').style.display = 'none';
+  resumeGame();
+  const me = activeChar || player;
+  popText(me.x, me.y - 34, '家园已迁至此地', '#9fe07a', 12);
+  saveGame();   // 迁移后立即写档
+}
+
+// 迁徙动画的绘制偏移: 逻辑坐标已是新位置, 偏移从旧位置收敛到 0
+function homeFxOffset() {
+  if (!homeFx) return { x: 0, y: 0 };
+  const k = 1 - Math.min(1, homeFx.t / homeFx.dur);
+  return { x: (homeFx.fromX - home.x) * k, y: (homeFx.fromY - home.y) * k };
 }
 
 // ===== 存档 v3 (localStorage, 兼容 v1/v2 旧档) =====
@@ -1270,8 +1362,10 @@ function drawCrop(cx, by, c, stage) {
 
 function drawFarm() {
   const near = nearestPlot();
+  const off = homeFxOffset();
   for (let i = 0; i < plots.length; i++) {
-    const [x, y] = plotPos(i);
+    const [x0, y0] = plotPos(i);
+    const x = x0 + off.x, y = y0 + off.y;
     const sx = x - camX, sy = y - camY;
     if (sx < -40 || sx > LOGIC_W + 40 || sy < -40 || sy > LOGIC_H + 40) continue;
     const p = plots[i];
@@ -1294,7 +1388,8 @@ function drawFarm() {
   }
   if (near >= 0) {
     const p = plots[near];
-    const [x, y] = plotPos(near);
+    const [x0, y0] = plotPos(near);
+    const x = x0 + off.x, y = y0 + off.y;
     let label;
     if (p.state === 'empty') label = seeds[selectedCrop] > 0 ? '空格 播种' : '种子不足 (B 商店)';
     else if (p.state === 'ready') label = '空格 收获';
@@ -2205,7 +2300,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle') {
+    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove') {
       render();
       return;
     }
@@ -2545,7 +2640,8 @@ function render() {
   // 守卫家园范围: 伙伴处于守卫任务时显示淡绿色虚线圆 (范围一目了然)
   if (partner && !partner.downed && partner.task === 'guard') {
     const hc = homeCenter();
-    const hx = Math.round(hc.x - camX), hy = Math.round(hc.y - camY);
+    const off = homeFxOffset();
+    const hx = Math.round(hc.x + off.x - camX), hy = Math.round(hc.y + off.y - camY);
     ctx.strokeStyle = 'rgba(159, 224, 122, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([5, 5]);
