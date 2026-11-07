@@ -1064,6 +1064,7 @@ function killEnemy(e) {
   if (phase === 'night') { nightKills++; saveDirty = true; }
   burst(e.x, e.y, e.color, 8);
   addShake(0.12, 2.5);
+  if (e.kind !== 'boss') popText(e.x, e.y, '击杀', '#ffd166', 11);
   spawnGem(e.x, e.y, e.xp);
   if (e.kind === 'boss') {
     spawnRareGem(e.x + 14, e.y);
@@ -1242,10 +1243,13 @@ function updateGems(dt) {
 }
 
 // ===== 粒子/飘字 =====
+const PARTICLE_MAX = 240;   // 场上粒子上限, 超过回收最老的
+const FLOAT_MAX = 40;       // 飘字上限
 function burst(x, y, color, n) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2;
     const s = 40 + Math.random() * 60;
+    if (particles.length >= PARTICLE_MAX) particles.shift();   // 上限回收
     particles.push({
       x, y,
       vx: Math.cos(a) * s, vy: Math.sin(a) * s - 20,
@@ -1256,6 +1260,7 @@ function burst(x, y, color, n) {
 }
 
 function popText(x, y, text, color, size) {
+  if (floats.length >= FLOAT_MAX) floats.shift();
   floats.push({ x, y, text, color, size: size || 9, life: 0.8, maxLife: 0.8, vy: -40 });
 }
 
