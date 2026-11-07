@@ -1,7 +1,7 @@
 {
-  "generated": "2026-11-03 19:10:48",
+  "generated": "2026-11-07 20:56:18",
   "characters": {
-    "child": {
+    "cat": {
       "down": {
         "idle": [
           "down/idle/frame_0.png",
@@ -12,6 +12,10 @@
           "down/walk/frame_1.png",
           "down/walk/frame_2.png",
           "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
         ]
       },
       "up": {
@@ -24,6 +28,10 @@
           "up/walk/frame_1.png",
           "up/walk/frame_2.png",
           "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
         ]
       },
       "side": {
@@ -36,6 +44,60 @@
           "side/walk/frame_1.png",
           "side/walk/frame_2.png",
           "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
+        ]
+      }
+    },
+    "child": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
         ]
       }
     },
@@ -50,6 +112,10 @@
           "down/walk/frame_1.png",
           "down/walk/frame_2.png",
           "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
         ]
       },
       "up": {
@@ -62,6 +128,10 @@
           "up/walk/frame_1.png",
           "up/walk/frame_2.png",
           "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
         ]
       },
       "side": {
@@ -74,6 +144,60 @@
           "side/walk/frame_1.png",
           "side/walk/frame_2.png",
           "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
+        ]
+      }
+    },
+    "fisherman": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
         ]
       }
     },
@@ -88,6 +212,10 @@
           "down/walk/frame_1.png",
           "down/walk/frame_2.png",
           "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
         ]
       },
       "up": {
@@ -100,6 +228,10 @@
           "up/walk/frame_1.png",
           "up/walk/frame_2.png",
           "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
         ]
       },
       "side": {
@@ -112,6 +244,60 @@
           "side/walk/frame_1.png",
           "side/walk/frame_2.png",
           "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
+        ]
+      }
+    },
+    "hunter": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
         ]
       }
     },
@@ -126,6 +312,10 @@
           "down/walk/frame_1.png",
           "down/walk/frame_2.png",
           "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
         ]
       },
       "up": {
@@ -138,6 +328,10 @@
           "up/walk/frame_1.png",
           "up/walk/frame_2.png",
           "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
         ]
       },
       "side": {
@@ -150,6 +344,60 @@
           "side/walk/frame_1.png",
           "side/walk/frame_2.png",
           "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
+        ]
+      }
+    },
+    "smith": {
+      "down": {
+        "idle": [
+          "down/idle/frame_0.png",
+          "down/idle/frame_1.png"
+        ],
+        "walk": [
+          "down/walk/frame_0.png",
+          "down/walk/frame_1.png",
+          "down/walk/frame_2.png",
+          "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
+        ]
+      },
+      "up": {
+        "idle": [
+          "up/idle/frame_0.png",
+          "up/idle/frame_1.png"
+        ],
+        "walk": [
+          "up/walk/frame_0.png",
+          "up/walk/frame_1.png",
+          "up/walk/frame_2.png",
+          "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
+        ]
+      },
+      "side": {
+        "idle": [
+          "side/idle/frame_0.png",
+          "side/idle/frame_1.png"
+        ],
+        "walk": [
+          "side/walk/frame_0.png",
+          "side/walk/frame_1.png",
+          "side/walk/frame_2.png",
+          "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
         ]
       }
     },
@@ -164,6 +412,10 @@
           "down/walk/frame_1.png",
           "down/walk/frame_2.png",
           "down/walk/frame_3.png"
+        ],
+        "attack": [
+          "down/attack/frame_0.png",
+          "down/attack/frame_1.png"
         ]
       },
       "up": {
@@ -176,6 +428,10 @@
           "up/walk/frame_1.png",
           "up/walk/frame_2.png",
           "up/walk/frame_3.png"
+        ],
+        "attack": [
+          "up/attack/frame_0.png",
+          "up/attack/frame_1.png"
         ]
       },
       "side": {
@@ -188,6 +444,10 @@
           "side/walk/frame_1.png",
           "side/walk/frame_2.png",
           "side/walk/frame_3.png"
+        ],
+        "attack": [
+          "side/attack/frame_0.png",
+          "side/attack/frame_1.png"
         ]
       }
     }

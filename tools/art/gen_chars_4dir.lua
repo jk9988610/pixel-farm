@@ -192,6 +192,12 @@ local function drawHeadDown(img, p, yOff)
       end
     end
     for x = 4, 6 do px(img, x, hy - 4, p.hat_sh) end
+  elseif p.hat_style == 'ears' then
+    -- 猫耳: 头顶两只小三角
+    for x = 4, 6 do px(img, x, hy - 5, p.hat) end
+    px(img, 5, hy - 6, p.hat); px(img, 5, hy - 5, p.hat_sh)
+    for x = 10, 12 do px(img, x, hy - 5, p.hat) end
+    px(img, 11, hy - 6, p.hat); px(img, 11, hy - 5, p.hat_sh)
   end
 end
 
@@ -241,6 +247,11 @@ local function drawHeadUp(img, p, yOff)
       end
     end
     for x = 4, 6 do px(img, x, hy - 4, p.hat_sh) end
+  elseif p.hat_style == 'ears' then
+    for x = 4, 6 do px(img, x, hy - 5, p.hat) end
+    px(img, 5, hy - 6, p.hat_sh)
+    for x = 10, 12 do px(img, x, hy - 5, p.hat) end
+    px(img, 11, hy - 6, p.hat_sh)
   end
 end
 
@@ -310,6 +321,8 @@ local function drawHeadSide(img, p, yOff)
       end
     end
     for x = 4, 6 do px(img, x, hy-4, p.hat_sh) end
+  elseif p.hat_style == 'ears' then
+    px(img, 6, hy - 6, p.hat); px(img, 7, hy - 6, p.hat); px(img, 7, hy - 5, p.hat_sh)
   end
 end
 
@@ -398,4 +411,40 @@ genChar("child", {
   hat_style = 'none', child = true,
 })
 
-print("ALL DONE: 5 chars x 3 dirs x 6 frames = 90 png")
+genChar("fisherman", {
+  hair = C(80,55,35), hair_sh = C(50,32,18),
+  shirt = C(60,120,150), shirt_sh = C(38,86,110),
+  pants = C(60,80,90), pants_sh = C(40,55,62),
+  boot = C(45,35,25), boot_sh = C(22,16,10),
+  hat = C(212,184,90), hat_sh = C(168,138,58),
+  beard = true, hat_style = 'straw',
+})
+
+genChar("smith", {
+  hair = C(50,40,35), hair_sh = C(28,22,18),
+  shirt = C(70,62,55), shirt_sh = C(45,40,35),
+  pants = C(60,45,35), pants_sh = C(38,28,22),
+  boot = C(40,28,18), boot_sh = C(20,12,8),
+  hat = C(55,55,60), hat_sh = C(35,35,40),
+  beard = true, hat_style = 'round',
+})
+
+genChar("hunter", {
+  hair = C(90,60,30), hair_sh = C(55,35,16),
+  shirt = C(70,110,60), shirt_sh = C(45,75,38),
+  pants = C(80,70,40), pants_sh = C(52,45,25),
+  boot = C(50,32,16), boot_sh = C(25,14,6),
+  hat = C(60,90,50), hat_sh = C(38,60,32),
+  hat_style = 'hood',
+})
+
+genChar("cat", {
+  hair = C(230,160,70), hair_sh = C(190,120,45),
+  shirt = C(235,170,80), shirt_sh = C(190,130,50),
+  pants = C(200,140,70), pants_sh = C(160,105,45),
+  boot = C(120,80,50), boot_sh = C(70,45,25),
+  hat = C(230,160,70), hat_sh = C(190,120,45),
+  hat_style = 'ears', child = true,
+})
+
+print("ALL DONE: 9 chars x 3 dirs x 6 frames")

@@ -60,6 +60,15 @@
   .ti-btn:hover:not(:disabled) { background: #2a3648; transform: translateY(-2px); }
   .ti-btn:disabled { color: #556070; border-color: #3a4450; cursor: default; }
   .ti-hint { color: #8899aa; font-size: 10px; margin-top: 10px; }
+  /* 角色选择 */
+  .ch-row { display: flex; flex-wrap: wrap; gap: 6px; width: 320px; justify-content: center; margin-bottom: 4px; }
+  .ch-chip {
+    padding: 5px 8px; cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 11px; color: #dfe8c8;
+    background: #141b24; border: 1px solid #3a4450; border-radius: 3px;
+  }
+  .ch-chip:hover { border-color: #7df9ff; }
+  .ch-chip.on { color: #fff; border-color: #ffd166; background: #2a3648; }
   /* 暂停菜单 */
   #pauseMenu {
     position: fixed; inset: 0; z-index: 50;
@@ -185,6 +194,7 @@
 <div id="title">
   <div class="ti-title">像素田园 · AI 幸存者</div>
   <div class="ti-sub">种田 · 生存 · 每夜防守</div>
+  <div id="charPick" class="ch-row"></div>
   <button class="ti-btn" id="btnNew">开始新游戏</button>
   <button class="ti-btn" id="btnContinue">继续读档</button>
   <div class="ti-hint">WASD 移动 · 空格 劳作/攻击 · B 商店 · ESC 暂停</div>
@@ -298,6 +308,46 @@ async function loadAllChars() {
   if (usingChar) playerTex = charTextures[usingChar];
 }
 
+// ===== 角色选择 (标题屏) =====
+const CHAR_NAMES = {
+  villager: '村民', girl: '女孩', elder: '长者', merchant: '商人', child: '小孩',
+  fisherman: '渔夫', smith: '铁匠', hunter: '猎人', cat: '猫咪',
+};
+const CHAR_TIPS = {
+  villager: '基础型', girl: '快速低血', elder: '慢速高攻', merchant: '均衡', child: '极速脆皮',
+  fisherman: '稳健耐久', smith: '高攻高血', hunter: '均衡速射', cat: '极速连射',
+};
+function buildCharPick() {
+  const box = $('charPick');
+  if (!box || box.dataset.built === '1') return;
+  box.innerHTML = '';
+  for (const n of charNames) {
+    const b = document.createElement('button');
+    b.className = 'ch-chip';
+    b.dataset.char = n;
+    b.textContent = CHAR_NAMES[n] || n;
+    b.title = CHAR_TIPS[n] || '';
+    b.onclick = () => setChar(n);
+    box.appendChild(b);
+  }
+  box.dataset.built = '1';
+  markCharPick();
+}
+function setChar(n) {
+  if (!charTextures[n]) return;
+  usingChar = n;
+  playerTex = charTextures[n];
+  markCharPick();
+  if (player) player.state = 'idle';   // 让标题屏背景小人也换装
+}
+function markCharPick() {
+  const box = $('charPick');
+  if (!box) return;
+  for (const b of box.querySelectorAll('.ch-chip')) {
+    b.classList.toggle('on', b.dataset.char === usingChar);
+  }
+}
+
 // ===== 状态 =====
 let player = null;
 let enemies = [];
@@ -402,6 +452,8 @@ function showTitle() {
   $('pauseMenu').style.display = 'none';
   $('levelup').style.display = 'none';
   $('btnContinue').disabled = !hasSave();
+  buildCharPick();
+  markCharPick();
   gameState = 'title';
 }
 function startNewGame() {
@@ -965,6 +1017,7 @@ class Player {
     this.laser = 0;      // 激光等级
     this.upgCount = {};  // 已选增益次数 (卡面显示 Lv)
     this.atkTimer = 0;
+    this.atkAnim = 0;    // 攻击动作剩余时间 (期间播 attack 帧)
     this.iframe = 0;
     this.facing = 'down';
     this.dir = 1;
@@ -975,6 +1028,7 @@ class Player {
 
   update(dt) {
     if (this.iframe > 0) this.iframe -= dt;
+    if (this.atkAnim > 0) this.atkAnim -= dt;
 
     const [dx, dy] = readMoveDir();
     const moving = Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01;
@@ -984,12 +1038,20 @@ class Player {
       this.y += dy * this.speed * dt;
       this.x = Math.max(20, Math.min(WORLD_W - 20, this.x));
       this.y = Math.max(30, Math.min(WORLD_H - 10, this.y));
-      if (Math.abs(dy) > Math.abs(dx)) {
-        this.facing = dy < 0 ? 'up' : 'down';
-      } else {
-        this.facing = 'side';
-        this.dir = dx > 0 ? 1 : -1;
+      if (this.atkAnim <= 0) {
+        if (Math.abs(dy) > Math.abs(dx)) {
+          this.facing = dy < 0 ? 'up' : 'down';
+        } else {
+          this.facing = 'side';
+          this.dir = dx > 0 ? 1 : -1;
+        }
       }
+    }
+
+    // 状态优先级: 攻击动作 > 行走 > 站立
+    if (this.atkAnim > 0) {
+      if (this.state !== 'attack') { this.state = 'attack'; this.frameIdx = 0; this.frameTimer = 0; }
+    } else if (moving) {
       if (this.state !== 'walk') { this.state = 'walk'; this.frameIdx = 0; this.frameTimer = 0; }
     } else {
       if (this.state !== 'idle') { this.state = 'idle'; this.frameIdx = 0; this.frameTimer = 0; }
@@ -1005,6 +1067,10 @@ class Player {
       }
       if (target) {
         const baseA = Math.atan2(target.y - this.y, target.x - this.x);
+        // 攻击朝向跟随目标, 播放对应方向的 attack 帧
+        const tx = target.x - this.x, ty = target.y - this.y;
+        if (Math.abs(ty) > Math.abs(tx)) this.facing = ty < 0 ? 'up' : 'down';
+        else { this.facing = 'side'; this.dir = tx > 0 ? 1 : -1; }
         const n = this.projCount;
         for (let i = 0; i < n; i++) {
           // 多弹道: 围绕目标方向扇形散开
@@ -1017,13 +1083,14 @@ class Player {
           });
         }
         this.atkTimer = this.atkSpeed;
+        this.atkAnim = 0.3;   // 播一段攻击动作, 结束自动回 idle/walk
       } else {
         this.atkTimer = 0.1;
       }
     }
 
     // 帧动画
-    const fps = this.state === 'walk' ? 8 : 4;
+    const fps = this.state === 'attack' ? 12 : (this.state === 'walk' ? 8 : 4);
     this.frameTimer += dt;
     if (this.frameTimer > 1 / fps) {
       this.frameTimer = 0;
@@ -1394,6 +1461,10 @@ function reset(preserveProgress = false) {
   else if (usingChar === 'elder') { player.speed = 60; player.dmg = 12; player.atkSpeed = 0.8; player.maxHp = 130; player.hp = 130; }
   else if (usingChar === 'merchant') { player.speed = 85; player.dmg = 10; player.atkSpeed = 0.6; }
   else if (usingChar === 'child') { player.speed = 110; player.dmg = 5; player.atkSpeed = 0.35; player.maxHp = 70; player.hp = 70; }
+  else if (usingChar === 'fisherman') { player.speed = 75; player.dmg = 9; player.atkSpeed = 0.55; player.maxHp = 110; player.hp = 110; }
+  else if (usingChar === 'smith') { player.speed = 70; player.dmg = 13; player.atkSpeed = 0.75; player.maxHp = 140; player.hp = 140; }
+  else if (usingChar === 'hunter') { player.speed = 95; player.dmg = 11; player.atkSpeed = 0.45; player.maxHp = 95; player.hp = 95; }
+  else if (usingChar === 'cat') { player.speed = 120; player.dmg = 6; player.atkSpeed = 0.3; player.maxHp = 70; player.hp = 70; }
 
   const savedStats = pendingStats;
   const stats = savedStats || prevStats;

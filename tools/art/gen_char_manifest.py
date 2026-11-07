@@ -6,7 +6,7 @@ CHAR_DIR = os.path.join(ROOT, 'demo', 'assets', 'char')
 MANIFEST = os.path.join(CHAR_DIR, 'manifest.json')
 
 DIRECTIONS = ['down', 'up', 'side']
-ACTIONS = ['idle', 'walk', 'jump']
+ACTIONS = ['idle', 'walk', 'jump', 'attack']
 
 characters = {}
 for cname in sorted(os.listdir(CHAR_DIR)):
