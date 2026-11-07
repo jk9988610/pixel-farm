@@ -407,10 +407,17 @@ let spawnTimer = 0;
 let deadTimer = 0;
 let gameState = 'playing';   // playing / paused / levelup / dead
 
-// ===== 输入 (键盘 + 触屏摇杆) =====
+// ===== 输入 (桌面: 键盘 + 鼠标; 移动端: 触屏摇杆) =====
 const keys = new Set();
 const MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+// 有触摸点才启用虚拟摇杆; 桌面端不显示
+const IS_TOUCH = navigator.maxTouchPoints > 0;
+const LEFT_HOLD_MS = 150;   // 左键按住超过该时长才开始跟随
 const touch = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+const mouse = { x: LOGIC_W / 2, y: LOGIC_H / 2 };
+let inputMode = 'none';   // none / keys / left(左键长按) / target(右键点地) / touch
+let moveTarget = null;    // 右键点地目标
+let leftHeld = false, leftAt = 0, leftPid = null;
 let actionQueued = false;
 
 window.addEventListener('keydown', (e) => {
@@ -418,6 +425,10 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (MOVE_KEYS.has(k) || k === ' ') e.preventDefault();
   if (e.repeat) return;
+  if (MOVE_KEYS.has(k)) {
+    inputMode = 'keys';   // 键盘接管移动
+    moveTarget = null;
+  }
   if (k === 'escape') {
     if (shopOpen) { closeShop(); return; }
     togglePause();
@@ -434,8 +445,17 @@ window.addEventListener('keydown', (e) => {
   }
   keys.add(k);
 });
-window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-window.addEventListener('blur', () => { keys.clear(); resetTouch(); });
+window.addEventListener('keyup', (e) => {
+  keys.delete(e.key.toLowerCase());
+  // 松开最后一个方向键: 回落到仍按住的左键跟随, 否则停住
+  if (inputMode === 'keys' && !hasMoveKey()) inputMode = leftHeld ? 'left' : 'none';
+});
+window.addEventListener('blur', () => { keys.clear(); resetInput(); });
+
+function hasMoveKey() {
+  for (const k of MOVE_KEYS) if (keys.has(k)) return true;
+  return false;
+}
 
 function toLogic(e) {
   const r = canvas.getBoundingClientRect();
@@ -446,41 +466,129 @@ function toLogic(e) {
 }
 function resetTouch() {
   touch.active = false; touch.id = null; touch.dx = 0; touch.dy = 0;
+  if (inputMode === 'touch') inputMode = 'none';
 }
+// 清空所有移动输入 (暂停/切店/切页时用, 避免残留目标点继续走)
+function resetInput() {
+  resetTouch();
+  leftHeld = false; leftPid = null;
+  moveTarget = null;
+  inputMode = 'none';
+}
+// 右键点地目标限制在可行走范围, 避免角色永远卡在边界
+function clampToWorld(x, y) {
+  return {
+    x: Math.max(20, Math.min(WORLD_W - 20, x)),
+    y: Math.max(30, Math.min(WORLD_H - 10, y)),
+  };
+}
+
+// 屏蔽浏览器右键菜单, 右键用于点地移动
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
 canvas.addEventListener('pointerdown', (e) => {
   if (!isActiveTab) return;
-  if (touch.id !== null) return;
+  if (e.pointerType === 'touch') {
+    if (!IS_TOUCH || touch.id !== null) return;   // 桌面端不启用虚拟摇杆
+    const p = toLogic(e);
+    touch.active = true; touch.id = e.pointerId;
+    touch.ox = p.x; touch.oy = p.y; touch.dx = 0; touch.dy = 0;
+    inputMode = 'touch';
+    canvas.setPointerCapture(e.pointerId);
+    return;
+  }
   const p = toLogic(e);
-  touch.active = true; touch.id = e.pointerId;
-  touch.ox = p.x; touch.oy = p.y; touch.dx = 0; touch.dy = 0;
-  canvas.setPointerCapture(e.pointerId);
+  mouse.x = p.x; mouse.y = p.y;
+  if (e.button === 0) {
+    leftHeld = true; leftPid = e.pointerId; leftAt = performance.now();
+    canvas.setPointerCapture(e.pointerId);
+  } else if (e.button === 2) {
+    // 点击位置是屏幕坐标, 转成世界坐标再作为目标点
+    moveTarget = clampToWorld(p.x + camX, p.y + camY);
+    leftHeld = false; leftPid = null;   // 右键接管, 左键需重新按下才恢复跟随
+    inputMode = 'target';
+  }
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (e.pointerId !== touch.id) return;
+  if (e.pointerType === 'touch') {
+    if (e.pointerId !== touch.id) return;
+    const p = toLogic(e);
+    const dx = p.x - touch.ox, dy = p.y - touch.oy;
+    const len = Math.hypot(dx, dy);
+    if (len < 6) { touch.dx = 0; touch.dy = 0; return; }
+    touch.dx = dx / len; touch.dy = dy / len;
+    return;
+  }
   const p = toLogic(e);
-  const dx = p.x - touch.ox, dy = p.y - touch.oy;
-  const len = Math.hypot(dx, dy);
-  if (len < 6) { touch.dx = 0; touch.dy = 0; return; }
-  touch.dx = dx / len; touch.dy = dy / len;
+  mouse.x = p.x; mouse.y = p.y;   // 左键长按跟随用
 });
 canvas.addEventListener('pointerup', (e) => {
-  if (e.pointerId === touch.id) resetTouch();
+  if (e.pointerType === 'touch') {
+    if (e.pointerId === touch.id) resetTouch();
+    return;
+  }
+  if (e.pointerId === leftPid) {
+    leftHeld = false; leftPid = null;
+    // 松开左键: 若键盘还按着就交回键盘, 否则停住
+    if (inputMode === 'left') inputMode = hasMoveKey() ? 'keys' : 'none';
+  }
 });
 canvas.addEventListener('pointercancel', (e) => {
-  if (e.pointerId === touch.id) resetTouch();
+  if (e.pointerType === 'touch') {
+    if (e.pointerId === touch.id) resetTouch();
+    return;
+  }
+  if (e.pointerId === leftPid) {
+    leftHeld = false; leftPid = null;
+    if (inputMode === 'left') inputMode = 'none';
+  }
 });
 
 function readMoveDir() {
-  let dx = 0, dy = 0;
-  if (keys.has('w') || keys.has('arrowup')) dy -= 1;
-  if (keys.has('s') || keys.has('arrowdown')) dy += 1;
-  if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
-  if (keys.has('d') || keys.has('arrowright')) dx += 1;
-  if (dx || dy) {
-    const l = Math.hypot(dx, dy) || 1;
+  // 左键按住超过阈值: 接管为跟随 (短按视为点击, 不触发移动)
+  if (leftHeld && performance.now() - leftAt >= LEFT_HOLD_MS && inputMode !== 'left') {
+    inputMode = 'left';
+    moveTarget = null;
+  }
+
+  if (inputMode === 'touch') {
+    if (touch.active && (touch.dx || touch.dy)) return [touch.dx, touch.dy];
+  }
+
+  if (inputMode === 'left') {
+    if (!leftHeld) inputMode = hasMoveKey() ? 'keys' : 'none';
+    else {
+      // 鼠标存的是屏幕坐标, 相机在动, 每帧按当前相机折算成世界坐标
+      const wx = mouse.x + camX, wy = mouse.y + camY;
+      const dx = wx - player.x, dy = wy - player.y;
+      const l = Math.hypot(dx, dy);
+      if (l > 8) return [dx / l, dy / l];
+      return [0, 0];
+    }
+  }
+
+  if (inputMode === 'keys') {
+    if (hasMoveKey()) {
+      let dx = 0, dy = 0;
+      if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+      if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+      if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+      if (keys.has('d') || keys.has('arrowright')) dx += 1;
+      const l = Math.hypot(dx, dy) || 1;
+      return [dx / l, dy / l];
+    }
+    inputMode = 'none';
+  }
+
+  if (inputMode === 'target' && moveTarget) {
+    const dx = moveTarget.x - player.x, dy = moveTarget.y - player.y;
+    const l = Math.hypot(dx, dy);
+    if (l < 8) { moveTarget = null; inputMode = 'none'; return [0, 0]; }
     return [dx / l, dy / l];
   }
-  if (touch.active && (touch.dx || touch.dy)) return [touch.dx, touch.dy];
+
+  // 兜底: 键盘仍按住但状态被覆盖时回到键盘
+  if (hasMoveKey()) { inputMode = 'keys'; return readMoveDir(); }
   return [0, 0];
 }
 
@@ -529,7 +637,7 @@ function openPauseMenu() {
   if (!pauseGame('menu')) return;
   keys.clear();
   actionQueued = false;
-  resetTouch();
+  resetInput();
   saveGame();
   renderPauseStats();
   $('pauseMenu').style.display = 'flex';
@@ -660,7 +768,7 @@ function openShop() {
   gameState = 'shop';
   keys.clear();
   actionQueued = false;
-  resetTouch();
+  resetInput();
   shopMsg('', false);
   $('shop').style.display = 'flex';
   renderShop();
@@ -742,7 +850,7 @@ function showSettlement(killsN, bonus, heal) {
   $('settle').style.display = 'flex';
   keys.clear();
   actionQueued = false;
-  resetTouch();
+  resetInput();
   gameState = 'settle';
 }
 
@@ -1497,6 +1605,7 @@ function addShake(t, mag) {
 
 // ===== 游戏重置 =====
 function reset(preserveProgress = false) {
+  resetInput();   // 清掉上一局的残留移动目标/按键
   const prevStats = (preserveProgress && player) ? snapshotStats(player) : null;
   player = new Player();
   // 应用素材角色属性微调 (不同角色差异)
@@ -2081,8 +2190,8 @@ function render() {
     ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
   }
 
-  // 触屏摇杆
-  if (touch.active) {
+  // 触屏摇杆 (仅移动端显示)
+  if (IS_TOUCH && touch.active) {
     ctx.globalAlpha = 0.5;
     ctx.fillStyle = '#0b1408';
     ctx.beginPath();
@@ -2094,6 +2203,22 @@ function render() {
     ctx.fillStyle = '#7df9ff';
     ctx.beginPath();
     ctx.arc(touch.ox + touch.dx * 22, touch.oy + touch.dy * 22, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // 右键点地目标标记
+  if (gameState === 'playing' && moveTarget) {
+    const sx = moveTarget.x - camX, sy = moveTarget.y - camY;
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = '#7df9ff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#7df9ff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -2176,7 +2301,7 @@ function enterStandby() {
   if (gameState === 'playing') gameState = 'paused';
   keys.clear();
   actionQueued = false;
-  resetTouch();
+  resetInput();
   $('tablock').style.display = 'flex';
 }
 
