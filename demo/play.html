@@ -66,6 +66,9 @@
   }
   .lu-card:hover { background: #2a3648; transform: translateY(-3px); }
   .lu-card .ico { font-size: 24px; display: block; margin-bottom: 8px; }
+  .lu-card .lv { color: #ffd166; font-size: 10px; margin-bottom: 4px; }
+  .lu-card .ds { color: #8899aa; font-size: 10px; margin-top: 6px; line-height: 1.4; }
+  .lu-card .key { color: #7df9ff; font-size: 10px; margin-top: 6px; }
   .lu-hint { color: #8899aa; font-size: 11px; }
   #tablock {
     position: fixed; inset: 0; z-index: 40;
@@ -277,6 +280,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'enter') { closeSettlement(); return; }
   if (k === ' ') { actionQueued = true; return; }
   if (k >= '1' && k <= String(Math.min(9, CROPS.length))) {
+    if (gameState === 'levelup') return;   // 选卡期间数字键归升级卡使用
     selectedCrop = Number(k) - 1;
     updateFarmHud();
     return;
@@ -845,6 +849,7 @@ class Player {
     this.knives = 0;     // 环绕飞刀数量
     this.boomerang = 0;  // 回旋镖等级
     this.laser = 0;      // 激光等级
+    this.upgCount = {};  // 已选增益次数 (卡面显示 Lv)
     this.atkTimer = 0;
     this.iframe = 0;
     this.facing = 'down';
@@ -1086,7 +1091,7 @@ function spawnRareGem(x, y) {
 }
 function applyRandomUpgrade() {
   const c = UPGRADES[Math.floor(Math.random() * UPGRADES.length)];
-  c.apply(player);
+  applyUpgrade(c);
   popText(player.x, player.y - 34, '稀有增益: ' + c.name, '#ffd166', 12);
   updateHud();
   saveGame();
@@ -1197,7 +1202,12 @@ function updateWeapons(dt) {
 // ===== 经验宝石 (敌人死亡掉落, 靠近吸附, 拾取攒经验) =====
 const GEM_MAGNET_R = 90;   // 吸附半径
 const GEM_PICK_R = 10;     // 拾取半径
+const GEM_MAX = 150;       // 场上宝石上限, 超过则回收最老的
 function spawnGem(x, y, value) {
+  if (gems.length >= GEM_MAX) {
+    // 上限回收: 最老的宝石经验并入新宝石, 实体数量不无限堆积
+    value += gems.shift().value;
+  }
   gems.push({ x, y, value, bob: Math.random() * Math.PI * 2, vx: 0, vy: 0 });
 }
 function updateGems(dt) {
@@ -1209,8 +1219,12 @@ function updateGems(dt) {
       if (g.kind === 'rare') {
         applyRandomUpgrade();   // 稀有宝石: 直接给增益, 不加经验
       } else {
-        // 升级则暂停弹三选一; 已在选卡界面时攒着, 选完下颗宝石再触发
-        if (gainXp(g.value) > 0 && gameState === 'playing') showLevelUp();
+        // 攒满经验则暂停弹三选一; 一次连升多级时排队, 选完继续弹
+        const ups = gainXp(g.value);
+        if (ups > 0) {
+          pendingUps += ups;
+          if (gameState === 'playing') showLevelUp();
+        }
         popText(g.x, g.y - 10, '+' + g.value, '#7df9ff');
       }
     } else if (d < GEM_MAGNET_R) {
@@ -1288,6 +1302,7 @@ function reset(preserveProgress = false) {
     level = 1;
     xp = 0;
     xpNext = 10;
+    pendingUps = 0;
     coins = 100;
     selectedCrop = 0;
     plots = newPlots();
@@ -1315,18 +1330,33 @@ function reset(preserveProgress = false) {
   updateHud();
 }
 
-// ===== 升级三选一 (升级暂停弹卡, AI 1.2s 后自动选, 也可点击) =====
+// ===== 暂停/恢复 (升级选卡与 ESC 暂停菜单共用) =====
+function pauseGame(state) {
+  if (gameState !== 'playing') return false;
+  gameState = state || 'paused';
+  return true;
+}
+function resumeGame() {
+  gameState = 'playing';
+  updateHud();
+}
+
+// ===== 升级三选一 (升级暂停弹卡, 数字键或点击选择, 3 秒超时 AI 自动选) =====
 const UPGRADES = [
-  { id: 'dmg',    ico: '⚔', name: '攻击 +2',   apply: p => p.dmg += 2 },
-  { id: 'speed',  ico: '👟', name: '移速 +15',  apply: p => p.speed += 15 },
-  { id: 'hp',     ico: '♥', name: '血量 +25',  apply: p => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
-  { id: 'rate',   ico: '⚡', name: '射速 +15%', apply: p => p.atkSpeed = Math.max(0.12, p.atkSpeed * 0.85) },
-  { id: 'multi',  ico: '☄', name: '弹道 +1',   apply: p => p.projCount += 1 },
-  { id: 'pierce', ico: '➹', name: '穿透 +1',   apply: p => p.pierce += 1 },
-  { id: 'knife',  ico: '🌀', name: '飞刀 +1',   apply: p => p.knives += 1 },
-  { id: 'boomer', ico: '🪃', name: '回旋镖',    apply: p => p.boomerang += 1 },
-  { id: 'laser',  ico: '🔦', name: '激光',      apply: p => p.laser += 1 },
+  { id: 'dmg',    ico: '⚔', name: '攻击 +2',   desc: '基础伤害 +2, 所有武器通用', apply: p => p.dmg += 2 },
+  { id: 'speed',  ico: '👟', name: '移速 +15',  desc: '移动速度 +15, 更难被围住', apply: p => p.speed += 15 },
+  { id: 'hp',     ico: '♥', name: '血量 +25',   desc: '最大血量 +25 并回复 25', apply: p => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
+  { id: 'rate',   ico: '⚡', name: '射速 +15%', desc: '攻击间隔缩短 15%', apply: p => p.atkSpeed = Math.max(0.12, p.atkSpeed * 0.85) },
+  { id: 'multi',  ico: '☄', name: '弹道 +1',   desc: '每次射击多射出 1 发子弹', apply: p => p.projCount += 1 },
+  { id: 'pierce', ico: '➹', name: '穿透 +1',   desc: '子弹可多穿透 1 个敌人', apply: p => p.pierce += 1 },
+  { id: 'knife',  ico: '🌀', name: '飞刀 +1',   desc: '多 1 把环绕飞刀持续切割', apply: p => p.knives += 1 },
+  { id: 'boomer', ico: '🪃', name: '回旋镖',    desc: '飞出折返, 升级缩短冷却', apply: p => p.boomerang += 1 },
+  { id: 'laser',  ico: '🔦', name: '激光',      desc: '瞬发贯穿光束, 升级缩短冷却', apply: p => p.laser += 1 },
 ];
+function applyUpgrade(c) {
+  c.apply(player);
+  player.upgCount[c.id] = (player.upgCount[c.id] || 0) + 1;
+}
 // AI 选卡偏好: 新武器/弹道/穿透优先, 其次攻击/射速, 残血优先补血
 function aiPickCard(cards) {
   const pref = { knife: 8, boomer: 8, laser: 7, multi: 6, pierce: 5, dmg: 4, rate: 3, speed: 1, hp: player.hp < player.maxHp * 0.5 ? 9 : 2 };
@@ -1335,33 +1365,46 @@ function aiPickCard(cards) {
   return best;
 }
 let levelupTimer = 0;
+let pendingUps = 0;   // 排队待选的升级次数
 function showLevelUp() {
-  gameState = 'levelup';
-  levelupTimer = 1.2;
+  if (!pauseGame('levelup')) return;
+  levelupTimer = 3;
   const pool = [...UPGRADES];
   const cards = [];
   for (let i = 0; i < 3; i++) cards.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   const box = $('levelup');
-  box.innerHTML = '<div class="lu-title">LEVEL UP 三选一</div><div class="lu-cards"></div><div class="lu-hint">AI 自动选择中...</div>';
+  box.innerHTML = '<div class="lu-title">LEVEL UP 三选一</div><div class="lu-cards"></div><div class="lu-hint">按 1/2/3 或点击选择, 3 秒后 AI 自动选</div>';
   const row = box.querySelector('.lu-cards');
-  for (const c of cards) {
+  cards.forEach((c, i) => {
+    const n = player.upgCount[c.id] || 0;
     const d = document.createElement('div');
     d.className = 'lu-card';
-    d.innerHTML = `<span class="ico">${c.ico}</span>${c.name}`;
+    d.innerHTML = `<span class="ico">${c.ico}</span><div class="lv">${n ? 'Lv.' + n : '未获得'}</div><div class="nm">${c.name}</div><div class="ds">${c.desc}</div><div class="key">[${i + 1}]</div>`;
     d.onclick = () => pickUpgrade(c);
     row.appendChild(d);
-  }
+  });
   box._cards = cards;
   box.style.display = 'flex';
 }
 function pickUpgrade(c) {
-  c.apply(player);
+  if (!c || gameState !== 'levelup') return;
+  applyUpgrade(c);
   popText(player.x, player.y - 30, c.name, '#7df9ff');
   $('levelup').style.display = 'none';
-  gameState = 'playing';
+  pendingUps = Math.max(0, pendingUps - 1);
+  resumeGame();
+  if (pendingUps > 0) showLevelUp();   // 还有排队升级, 继续弹卡
   updateHud();
   saveGame();
 }
+
+// 键盘选卡: 数字键 1/2/3, 鼠标点击同样可用
+window.addEventListener('keydown', (e) => {
+  if (gameState !== 'levelup') return;
+  const n = parseInt(e.key, 10);
+  const cards = $('levelup')._cards;
+  if (n >= 1 && n <= 3 && cards && cards[n - 1]) pickUpgrade(cards[n - 1]);
+});
 
 // ===== 升级 =====
 function gainXp(n) {
@@ -1419,9 +1462,11 @@ function loop(t) {
       return;
     }
 
-    // 选卡暂停: 只渲染 + AI 倒计时自动选
+    // 选卡暂停: 只渲染 + 倒计时后 AI 自动选
     if (gameState === 'levelup') {
       levelupTimer -= dt;
+      const hint = $('levelup').querySelector('.lu-hint');
+      if (hint) hint.textContent = '按 1/2/3 或点击选择, ' + Math.ceil(Math.max(0, levelupTimer)) + ' 秒后 AI 自动选';
       if (levelupTimer <= 0) pickUpgrade(aiPickCard($('levelup')._cards));
       render();
       updateHud();
