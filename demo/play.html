@@ -60,6 +60,11 @@
   .ti-btn:hover:not(:disabled) { background: #2a3648; transform: translateY(-2px); }
   .ti-btn:disabled { color: #556070; border-color: #3a4450; cursor: default; }
   .ti-hint { color: #8899aa; font-size: 10px; margin-top: 10px; }
+  .ti-err {
+    display: none; width: 340px; margin-top: 8px; padding: 6px 10px;
+    color: #ff8f6b; font-size: 10px; line-height: 1.6; text-align: center;
+    background: rgba(60, 20, 20, 0.82); border: 1px solid #ff8f6b; border-radius: 4px;
+  }
   /* 角色选择 */
   .ch-row { display: flex; flex-wrap: wrap; gap: 6px; width: 320px; justify-content: center; margin-bottom: 4px; }
   .ch-chip {
@@ -206,6 +211,7 @@
   <div id="board" class="board"></div>
   <button class="ti-btn" id="btnNew">开始新游戏</button>
   <button class="ti-btn" id="btnContinue">继续读档</button>
+  <div id="saveerr" class="ti-err"></div>
   <div class="ti-hint">WASD 移动 · 空格 劳作/攻击 · B 商店 · ESC 暂停</div>
 </div>
 <div id="pauseMenu">
@@ -668,12 +674,23 @@ function showTitle() {
   $('pauseMenu').style.display = 'none';
   $('levelup').style.display = 'none';
   $('btnContinue').disabled = !hasSave();
+  // 读档失败时在标题屏可见提示, 不把失败静默成新档
+  const errEl = $('saveerr');
+  if (saveLoadError) {
+    errEl.style.display = 'block';
+    errEl.textContent = '存档读取失败：' + saveLoadError + '。原存档已保留，本次不会自动覆盖；点「开始新游戏」会覆盖旧存档。';
+  } else {
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
   buildCharPick();
   markCharPick();
   renderBoard();
   gameState = 'title';
 }
 function startNewGame() {
+  saveBlocked = false;      // 玩家显式开新档: 允许覆盖旧存档
+  saveLoadError = '';
   pendingStats = null;
   pendingPartnerStats = null;
   pendingPartnerChar = null;
@@ -685,7 +702,10 @@ function startNewGame() {
   lastT = performance.now();
 }
 function continueGame() {
-  if (!loadGame()) { startNewGame(); return; }
+  if (!loadGame()) {
+    if (saveLoadError) { showTitle(); return; }   // 读档失败: 留在标题屏并保留原档, 不覆盖
+    startNewGame(); return;
+  }
   reset(true);
   saveGame();
   $('title').style.display = 'none';
@@ -740,12 +760,13 @@ function togglePause() {
 // ===== 农场 =====
 const FARM_COLS = 3, FARM_ROWS = 3, FARM_CELL = 34, FARM_GAP = 2;
 const FARM_W = FARM_COLS * FARM_CELL + (FARM_COLS - 1) * FARM_GAP;
-const FARM_X0 = Math.round(WORLD_W / 2 - FARM_W / 2);
-const FARM_Y0 = WORLD_H / 2 + 52;
-// 家园位置: 直接复用现有农场区域中心 (3x3 地块网格), 不另造一套坐标
 const FARM_H = FARM_ROWS * FARM_CELL + (FARM_ROWS - 1) * FARM_GAP;
-const HOME_X = FARM_X0 + FARM_W / 2;
-const HOME_Y = FARM_Y0 + FARM_H / 2;
+// 家园: 唯一权威位置是左上角(0 号地块左上角)的世界坐标 home,
+// 地块坐标与家园中心都由它派生, 不再保留 FARM_X0/HOME_X 之类的平行常量.
+const DEFAULT_HOME = { x: Math.round(WORLD_W / 2 - FARM_W / 2), y: WORLD_H / 2 + 52 };
+const HOME_MAX_X = WORLD_W - FARM_W, HOME_MAX_Y = WORLD_H - FARM_H;
+let home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
+function homeCenter() { return { x: home.x + FARM_W / 2, y: home.y + FARM_H / 2 }; }
 const FOLLOW_FAR = 96, FOLLOW_NEAR = 34;   // 跟随舒适距离: 超过远值才追, 小于近值退开
 const GUARD_R = 120;                        // 守卫家园: 只处理进入此半径的敌人
 const CROPS = [
@@ -956,7 +977,7 @@ function closeSettlement() {
 
 function plotPos(i) {
   const col = i % FARM_COLS, row = Math.floor(i / FARM_COLS);
-  return [FARM_X0 + col * (FARM_CELL + FARM_GAP), FARM_Y0 + row * (FARM_CELL + FARM_GAP)];
+  return [home.x + col * (FARM_CELL + FARM_GAP), home.y + row * (FARM_CELL + FARM_GAP)];
 }
 
 function nearestPlot() {
@@ -1028,10 +1049,11 @@ function updateFarmHud() {
   $('nkills').textContent = nightKills;
 }
 
-// ===== 存档 v2 (localStorage, 兼容 v1 旧档) =====
+// ===== 存档 v3 (localStorage, 兼容 v1/v2 旧档) =====
 // 清档方式: 浏览器控制台执行 localStorage.removeItem('pixel-farm-save-v1') 后刷新
 const SAVE_KEY = 'pixel-farm-save-v1';
-const SAVE_VERSION = 2;
+const SAVE_BACKUP_KEY = 'pixel-farm-save-backup-v2';   // v1/v2 首次迁移前的原文备份
+const SAVE_VERSION = 3;
 const PLAYER_STAT_KEYS = ['maxHp', 'hp', 'speed', 'dmg', 'atkSpeed', 'projSpeed', 'projCount', 'pierce', 'critChance', 'critMul', 'knives', 'boomerang', 'laser'];
 let pendingStats = null;
 let pendingPartnerStats = null;   // 读档时伙伴属性
@@ -1041,6 +1063,8 @@ let pendingActiveRole = null;     // 读档时受控角色
 let saveDirty = false;
 let saveTimer = 0;
 let saveReady = false;
+let saveBlocked = false;          // 读档失败: 禁止自动存档, 避免覆盖原档
+let saveLoadError = '';           // 读档失败原因, 显示在标题屏
 
 function isNum(v) { return typeof v === 'number' && isFinite(v); }
 
@@ -1053,7 +1077,7 @@ function snapshotStats(target) {
 }
 
 function saveGame() {
-  if (!saveReady || !isActiveTab) return;
+  if (!saveReady || !isActiveTab || saveBlocked) return;
   try {
     const payload = {
       version: SAVE_VERSION,
@@ -1071,6 +1095,8 @@ function saveGame() {
       seeds: seeds.slice(),
       produce: produce.slice(),
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
+      // v3: 家园左上角世界坐标, 地块仍只存相对索引, 位置由它派生
+      home: { x: home.x, y: home.y },
       stats: player ? snapshotStats(player) : (pendingStats || {}),
       // v2: 角色各自的素材与属性; 等级/经验仍为队伍共享
       chars: {
@@ -1086,26 +1112,57 @@ function saveGame() {
   }
 }
 
+// 旧档首次迁移前备份原文: 已有备份就跳过, 保证只写一次且不被后续启动覆盖
+function backupLegacySave(raw) {
+  try {
+    if (localStorage.getItem(SAVE_BACKUP_KEY)) return;
+    localStorage.setItem(SAVE_BACKUP_KEY, raw);
+  } catch (e) {
+    console.warn('旧档备份失败', e);
+  }
+}
+
+// 读档失败: 保留原存档(阻止自动存档覆盖), 原因留给标题屏显示
+function failLoad(reason) {
+  saveLoadError = reason;
+  saveBlocked = true;
+  console.warn('存档读取失败, 已保留原存档:', reason);
+  return false;
+}
+
 function loadGame() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return false;
+    if (!raw) return false;                    // 无存档: 正常新档, 不算失败
     const s = JSON.parse(raw);
-    if (!s) return false;
+    if (!s) return failLoad('存档内容为空');
     const ver = s.version;
-    if (ver !== 1 && ver !== 2) return false;   // v1 旧档继续兼容
+    if (ver !== 1 && ver !== 2 && ver !== 3) return failLoad('未知存档版本 ' + ver);
+    // 旧档迁移前先备份原文, 备份成功后才可能写 v3
+    if (ver !== 3) backupLegacySave(raw);
     for (const k of ['coins', 'level', 'xp', 'xpNext', 'selectedCrop', 'farmTime']) {
-      if (!isNum(s[k])) return false;
+      if (!isNum(s[k])) return failLoad('缺少字段 ' + k);
     }
-    if (!Array.isArray(s.plots) || s.plots.length !== FARM_COLS * FARM_ROWS) return false;
+    if (!Array.isArray(s.plots) || s.plots.length !== FARM_COLS * FARM_ROWS) return failLoad('地块数据不完整');
     const loadedPlots = s.plots.map((p) => {
       if (!p || !['empty', 'growing', 'ready'].includes(p.state)) throw new Error('bad plot state');
       const crop = Math.floor(p.crop);
       if (crop < 0 || crop >= CROPS.length || !isNum(p.start)) throw new Error('bad plot crop');
       return { state: p.state, crop, start: p.start };
     });
-    // v2 按角色分存; v1 只有 stats -> 视为玩家属性, 伙伴按默认生成
-    const chars = (ver === 2 && s.chars && typeof s.chars === 'object') ? s.chars : {};
+    // 家园位置: v3 必填且必须为有限数值, 越界只裁剪(位置可恢复, 不判损坏);
+    // v1/v2 回填默认值, 与旧版 FARM_X0/FARM_Y0 逐像素一致 -> 旧档平移零偏差
+    if (ver === 3) {
+      if (!s.home || !isNum(s.home.x) || !isNum(s.home.y)) return failLoad('家园位置缺失或非法');
+      home = {
+        x: Math.min(HOME_MAX_X, Math.max(0, Math.floor(s.home.x))),
+        y: Math.min(HOME_MAX_Y, Math.max(0, Math.floor(s.home.y))),
+      };
+    } else {
+      home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
+    }
+    // v2 起按角色分存; v1 只有 stats -> 视为玩家属性, 伙伴按默认生成
+    const chars = (s.chars && typeof s.chars === 'object') ? s.chars : {};
     const pStats = (chars.player && chars.player.stats && typeof chars.player.stats === 'object')
       ? snapshotStats(chars.player.stats)
       : ((s.stats && typeof s.stats === 'object') ? snapshotStats(s.stats) : {});
@@ -1138,11 +1195,22 @@ function loadGame() {
     pendingPartnerStats = Object.keys(paStats).length ? paStats : null;
     pendingPlayerChar = (chars.player && typeof chars.player.char === 'string') ? chars.player.char : null;
     pendingPartnerChar = (chars.partner && typeof chars.partner.char === 'string') ? chars.partner.char : null;
-    pendingActiveRole = (ver === 2 && s.activeRole === 'partner') ? 'partner' : null;
+    pendingActiveRole = (s.activeRole === 'partner') ? 'partner' : null;
+    // 迁移立即落盘 v3: 只在持有写锁的标签页写, 避免与其它标签页互相覆盖
+    if (ver !== 3 && isActiveTab) {
+      try {
+        s.version = 3;
+        s.home = { x: home.x, y: home.y };
+        localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+      } catch (e) {
+        console.warn('存档迁移写入失败, 下次保存时重试', e);
+      }
+    }
+    saveLoadError = '';
+    saveBlocked = false;
     return true;
   } catch (e) {
-    console.warn('存档读取失败, 使用新档', e);
-    return false;
+    return failLoad('存档解析失败: ' + e.message);
   }
 }
 
@@ -1392,10 +1460,11 @@ class Actor {
     this.atkTimer -= dt;
     if (this.atkTimer <= 0) {
       let target = null, tD = Infinity;
+      const hc = homeCenter();
       for (const e of enemies) {
         const d = Math.hypot(e.x - this.x, e.y - this.y);
         // 守卫家园只处理进入守卫圈的敌人, 圈外一律不打
-        if (this.role === 'partner' && this.task === 'guard' && Math.hypot(e.x - HOME_X, e.y - HOME_Y) > GUARD_R) continue;
+        if (this.role === 'partner' && this.task === 'guard' && Math.hypot(e.x - hc.x, e.y - hc.y) > GUARD_R) continue;
         if (d < tD && d < ATTACK_RANGE) { tD = d; target = e; }
       }
       if (target) {
@@ -1463,10 +1532,11 @@ class Actor {
 
   // 守卫家园: 只接战进入守卫圈的敌人, 其余时间绕家园巡逻, 不跟玩家跑
   guardDir() {
-    const e = nearestEnemyTo(HOME_X, HOME_Y, GUARD_R);
+    const hc = homeCenter();
+    const e = nearestEnemyTo(hc.x, hc.y, GUARD_R);
     if (e) {
       // 追不超过守卫圈太远, 免得被引走
-      if (Math.hypot(this.x - HOME_X, this.y - HOME_Y) > GUARD_R + 20) return dirTo(this, { x: HOME_X, y: HOME_Y });
+      if (Math.hypot(this.x - hc.x, this.y - hc.y) > GUARD_R + 20) return dirTo(this, { x: hc.x, y: hc.y });
       const dx = e.x - this.x, dy = e.y - this.y, l = Math.hypot(dx, dy) || 1;
       if (l > 70) return [dx / l, dy / l];
       if (l < 45) return [-dx / l, -dy / l];
@@ -1474,8 +1544,8 @@ class Actor {
     }
     // 无敌人: 在家园中心附近绕小圈巡逻
     const ang = gameTime * 0.45 + this.patrolSeed;
-    const tx = HOME_X + Math.cos(ang) * 38;
-    const ty = HOME_Y + Math.sin(ang) * 26;
+    const tx = hc.x + Math.cos(ang) * 38;
+    const ty = hc.y + Math.sin(ang) * 26;
     if (Math.hypot(tx - this.x, ty - this.y) > 10) return dirTo(this, { x: tx, y: ty });
     return [0, 0];
   }
@@ -1949,6 +2019,7 @@ function reset(preserveProgress = false) {
     selectedCrop = 0;
     plots = newPlots();
     farmTime = 0;
+    home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
     phase = 'day';
     phaseT = DAY_LEN;
     nightKills = 0;
@@ -2473,7 +2544,8 @@ function render() {
 
   // 守卫家园范围: 伙伴处于守卫任务时显示淡绿色虚线圆 (范围一目了然)
   if (partner && !partner.downed && partner.task === 'guard') {
-    const hx = Math.round(HOME_X - camX), hy = Math.round(HOME_Y - camY);
+    const hc = homeCenter();
+    const hx = Math.round(hc.x - camX), hy = Math.round(hc.y - camY);
     ctx.strokeStyle = 'rgba(159, 224, 122, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([5, 5]);
@@ -2725,7 +2797,7 @@ function enterStandby() {
 function takeOver() {
   acquireLock(true);
   $('tablock').style.display = 'none';
-  loadGame();
+  if (!loadGame() && saveLoadError) { enterStandby(); return; }   // 读档失败: 保留原档并保持待命
   reset(true);
   saveReady = true;
   lastT = performance.now();
@@ -2794,7 +2866,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261107234912 -->
-<script>window.__BUILD='20261107234912';</script>
+
+<!-- build:20261108001335 -->
+<script>window.__BUILD='20261108001335';</script>
 </body>
 </html>
