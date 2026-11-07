@@ -6,7 +6,7 @@
 用法: 双击 deploy.cmd, 或 python deploy.py
 旧式(清空覆盖, 无回滚)保留在 deploy-legacy.py, 仅作应急对比。
 """
-import os, sys, subprocess, zipfile, tempfile, time, urllib.request
+import os, re, sys, subprocess, zipfile, tempfile, time, urllib.request
 
 if sys.platform == 'win32':
     try:
@@ -32,6 +32,23 @@ MANIFEST_URL = 'https://play.bykc.click/assets/sv/manifest.json'
 
 def step(msg):
     print(f'[{msg}]', flush=True)
+
+def stamp_build():
+    """给 play.html 追加构建时间戳注释 + window.__BUILD (资源 URL 用它防缓存)"""
+    p = os.path.join(DEMO_DIR, 'play.html')
+    with open(p, encoding='utf-8') as f:
+        s = f.read()
+    # 去掉上一次构建留下的标记, 避免无限追加
+    s = re.sub(r'\n?<!-- build:[\s\S]*?__BUILD=[\'"]\d+[\'"];</script>', '', s)
+    block = (f'\n<!-- build:{STAMP} -->'
+             f'\n<script>window.__BUILD=\'{STAMP}\';</script>')
+    if '</body>' in s:
+        s = s.replace('</body>', block + '\n</body>', 1)
+    else:
+        s += block
+    with open(p, 'w', encoding='utf-8', newline='') as f:
+        f.write(s)
+    return STAMP
 
 def ok(msg):
     print(f'      -> {msg}', flush=True)
@@ -89,6 +106,12 @@ def main():
 
     # [1/6] 打包
     step('1/6 打包 demo/ ...')
+    try:
+        build = stamp_build()
+        ok(f'play.html 构建标记: {build}')
+    except Exception as e:
+        fail(f'写构建标记失败: {e}')
+        return 1
     if os.path.exists(ZIP_PATH):
         os.remove(ZIP_PATH)
     try:

@@ -69,6 +69,12 @@
   }
   .ch-chip:hover { border-color: #7df9ff; }
   .ch-chip.on { color: #fff; border-color: #ffd166; background: #2a3648; }
+  /* 排行榜 */
+  .board { width: 300px; margin: 6px 0 2px; padding: 6px 10px; background: rgba(28,36,48,0.7); border: 1px solid #3a4450; border-radius: 4px; }
+  .bd-title { color: #ffd166; font-size: 11px; margin-bottom: 3px; }
+  .bd-row { display: flex; justify-content: space-between; color: #dfe8c8; font-size: 11px; padding: 1px 0; }
+  .bd-row b { color: #fff; font-weight: normal; }
+  .bd-empty { color: #6d7888; font-size: 10px; }
   /* 暂停菜单 */
   #pauseMenu {
     position: fixed; inset: 0; z-index: 50;
@@ -195,6 +201,7 @@
   <div class="ti-title">像素田园 · AI 幸存者</div>
   <div class="ti-sub">种田 · 生存 · 每夜防守</div>
   <div id="charPick" class="ch-row"></div>
+  <div id="board" class="board"></div>
   <button class="ti-btn" id="btnNew">开始新游戏</button>
   <button class="ti-btn" id="btnContinue">继续读档</button>
   <div class="ti-hint">WASD 移动 · 空格 劳作/攻击 · B 商店 · ESC 暂停</div>
@@ -265,18 +272,20 @@ let charNames = [];
 let usingChar = null;
 let playerTex = null;
 
+const BUILD = (typeof window !== 'undefined' && window.__BUILD) || '0';
+
 function loadImg(src) {
   return new Promise((res, rej) => {
     const img = new Image();
     img.onload = () => res(img);
     img.onerror = () => rej(new Error(src));
-    img.src = src;
+    img.src = src + (src.includes('?') ? '&' : '?') + 'v=' + BUILD;   // 防缓存
   });
 }
 
 async function loadAllChars() {
   try {
-    const r = await fetch('assets/char/manifest.json', { cache: 'no-store' });
+    const r = await fetch('assets/char/manifest.json?v=' + BUILD, { cache: 'no-store' });
     manifest = await r.json();
   } catch (e) {
     console.warn('manifest fail', e);
@@ -346,6 +355,38 @@ function markCharPick() {
   for (const b of box.querySelectorAll('.ch-chip')) {
     b.classList.toggle('on', b.dataset.char === usingChar);
   }
+}
+
+// ===== 存活时长排行榜 (localStorage 前三名) =====
+const BOARD_KEY = 'pixel-farm-board-v1';
+function loadBoard() {
+  try {
+    const b = JSON.parse(localStorage.getItem(BOARD_KEY) || '[]');
+    return Array.isArray(b) ? b : [];
+  } catch (e) { return []; }
+}
+function recordRun(time, k) {
+  const b = loadBoard();
+  b.push({ t: Math.max(0, Math.floor(time)), k: Math.max(0, Math.floor(k)) });
+  b.sort((a, c) => c.t - a.t || c.k - a.k);
+  try { localStorage.setItem(BOARD_KEY, JSON.stringify(b.slice(0, 5))); } catch (e) {}
+}
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+function renderBoard() {
+  const box = $('board');
+  if (!box) return;
+  const b = loadBoard().slice(0, 3);
+  if (!b.length) {
+    box.innerHTML = '<div class="bd-title">最高存活</div><div class="bd-empty">还没有记录, 死一次就会上榜</div>';
+    return;
+  }
+  const medals = ['🥇', '🥈', '🥉'];
+  box.innerHTML = '<div class="bd-title">最高存活</div>' + b.map((r, i) =>
+    '<div class="bd-row"><span>' + medals[i] + ' ' + fmtTime(r.t) + '</span><b>击杀 ' + r.k + '</b></div>'
+  ).join('');
 }
 
 // ===== 状态 =====
@@ -454,6 +495,7 @@ function showTitle() {
   $('btnContinue').disabled = !hasSave();
   buildCharPick();
   markCharPick();
+  renderBoard();
   gameState = 'title';
 }
 function startNewGame() {
@@ -1106,6 +1148,7 @@ class Player {
       this.hp = 0;
       gameState = 'dead';
       deadTimer = RESPAWN_DELAY;
+      recordRun(gameTime, kills);   // 本次存活成绩上榜
     }
     updateHud();
   }
@@ -2206,5 +2249,10 @@ window.addEventListener('pagehide', () => {
   requestAnimationFrame(loop);
 })();
 </script>
+
+
+
+<!-- build:20261107230555 -->
+<script>window.__BUILD='20261107230555';</script>
 </body>
 </html>
