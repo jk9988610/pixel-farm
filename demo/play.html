@@ -415,8 +415,9 @@ const IS_TOUCH = navigator.maxTouchPoints > 0;
 const LEFT_HOLD_MS = 150;   // 左键按住超过该时长才开始跟随
 const touch = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
 const mouse = { x: LOGIC_W / 2, y: LOGIC_H / 2 };
-let inputMode = 'none';   // none / keys / left(左键长按) / target(右键点地) / touch
+let inputMode = 'none';   // none / keys / left(左键长按) / target(右键点地) / path(Shift 多点路径) / touch
 let moveTarget = null;    // 右键点地目标
+let pathTargets = [];     // Shift 点选的多点路径 (世界坐标列表)
 let leftHeld = false, leftAt = 0, leftPid = null;
 let actionQueued = false;
 
@@ -428,6 +429,7 @@ window.addEventListener('keydown', (e) => {
   if (MOVE_KEYS.has(k)) {
     inputMode = 'keys';   // 键盘接管移动
     moveTarget = null;
+    pathTargets = [];
   }
   if (k === 'escape') {
     if (shopOpen) { closeShop(); return; }
@@ -473,6 +475,7 @@ function resetInput() {
   resetTouch();
   leftHeld = false; leftPid = null;
   moveTarget = null;
+  pathTargets = [];
   inputMode = 'none';
 }
 // 右键点地目标限制在可行走范围, 避免角色永远卡在边界
@@ -499,12 +502,22 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   const p = toLogic(e);
   mouse.x = p.x; mouse.y = p.y;
+  // Shift + 左/右键: 追加路径点 (不清空已有路径, 支持多点串联)
+  if (e.shiftKey && (e.button === 0 || e.button === 2)) {
+    if (inputMode !== 'path') pathTargets = [];
+    pathTargets.push(clampToWorld(p.x + camX, p.y + camY));
+    moveTarget = null;
+    leftHeld = false; leftPid = null;
+    inputMode = 'path';
+    return;
+  }
   if (e.button === 0) {
     leftHeld = true; leftPid = e.pointerId; leftAt = performance.now();
     canvas.setPointerCapture(e.pointerId);
   } else if (e.button === 2) {
     // 点击位置是屏幕坐标, 转成世界坐标再作为目标点
     moveTarget = clampToWorld(p.x + camX, p.y + camY);
+    pathTargets = [];
     leftHeld = false; leftPid = null;   // 右键接管, 左键需重新按下才恢复跟随
     inputMode = 'target';
   }
@@ -549,6 +562,7 @@ function readMoveDir() {
   if (leftHeld && performance.now() - leftAt >= LEFT_HOLD_MS && inputMode !== 'left') {
     inputMode = 'left';
     moveTarget = null;
+    pathTargets = [];
   }
 
   if (inputMode === 'touch') {
@@ -585,6 +599,19 @@ function readMoveDir() {
     const l = Math.hypot(dx, dy);
     if (l < 8) { moveTarget = null; inputMode = 'none'; return [0, 0]; }
     return [dx / l, dy / l];
+  }
+
+  // Shift 路径: 依次走向各路径点, 到达一个就把它从列表移除, 全部到达后清空
+  if (inputMode === 'path') {
+    while (pathTargets.length) {
+      const pt = pathTargets[0];
+      const dx = pt.x - player.x, dy = pt.y - player.y;
+      const l = Math.hypot(dx, dy);
+      if (l < 8) { pathTargets.shift(); continue; }
+      return [dx / l, dy / l];
+    }
+    inputMode = 'none';
+    return [0, 0];
   }
 
   // 兜底: 键盘仍按住但状态被覆盖时回到键盘
@@ -798,19 +825,30 @@ document.getElementById('shopclose').addEventListener('click', closeShop);
 document.getElementById('settleok').addEventListener('click', closeSettlement);
 
 // ===== 昼夜双循环 (最小版) =====
-// 白天: 限时种田 + 少量弱敌(补升级节奏); 夜晚: 敌潮+Boss; 清晨: 结算金币并清场.
-const DAY_LEN = 50;
-const NIGHT_LEN = 40;
+// 白天: 限时种田(不刷怪); 夜晚: 敌潮+Boss; 清晨: 结算金币并清场.
+const DAY_LEN = 150;      // 原 50s ×3
+const NIGHT_LEN = 120;    // 原 40s ×3
 let phase = 'day';        // day / night
 let phaseT = DAY_LEN;     // 当前阶段剩余秒数
 let nightKills = 0;       // 本夜击杀数(与总击杀 kills 分离)
 let dayNumber = 1;        // 第几天, 夜晚强度按天递增
 
+// 时间点统一配置 (本批整体 3 倍节奏, 集中在这里避免多处硬编码)
+const RHYTHM = {
+  bossNightDelay: 36,     // 入夜 12s 触发 Boss → 36s
+  spawnBase: 1.8,         // 原出怪间隔基数 0.9s ×2 (夜晚时长 3 倍, 间隔放宽 2 倍, 单夜总量约 1.5 倍)
+  spawnRamp: 0.008,       // 原 0.012 按新夜晚归一化后 ×2
+  spawnMin: 0.36,         // 原最小间隔 0.18s ×2
+  extraSpawn1: 36,        // 原"入夜 12s 后"追加 ×3
+  extraSpawn2: 72,        // 原"入夜 24s 后"追加 ×3
+  enemyUnlock: [30, 90, 180, 270, 300, 360, 420],   // 原 10/30/60/90/100/120/140 秒 ×3
+};
+
 function startNight() {
   phase = 'night';
   phaseT = NIGHT_LEN;
   nightKills = 0;
-  bossT = 12;             // 每夜一只 Boss, 入夜 12s 出现
+  bossT = RHYTHM.bossNightDelay;   // 每夜一只 Boss, 入夜 36s 出现
   spawnTimer = 0;
   popText(player.x, player.y - 46, '夜幕降临 · 敌人来袭', '#ff9f6b', 15);
   addShake(0.25, 3);
@@ -834,7 +872,7 @@ function startDay() {
   phase = 'day';
   phaseT = DAY_LEN;
   spawnTimer = 0;
-  bossT = 12;
+  bossT = RHYTHM.bossNightDelay;
   updateFarmHud();
   saveDirty = true;
   saveGame();
@@ -1318,21 +1356,16 @@ const ENEMY_TYPES = [
 
 function pickType() {
   let maxI = 0;
-  if (gameTime > 10) maxI = 1;
-  if (gameTime > 30) maxI = 2;
-  if (gameTime > 60) maxI = 3;
-  if (gameTime > 90) maxI = 4;
-  if (gameTime > 100) maxI = 5;   // 冲刺球
-  if (gameTime > 120) maxI = 6;   // 分裂球
-  if (gameTime > 140) maxI = 7;   // 弹幕球
+  for (let i = 0; i < RHYTHM.enemyUnlock.length; i++) {
+    if (gameTime > RHYTHM.enemyUnlock[i]) maxI = i + 1;
+  }
   return ENEMY_TYPES[Math.floor(Math.random() * (maxI + 1))];
 }
 
-function spawnEnemy(weak) {
+function spawnEnemy() {
   const a = Math.random() * Math.PI * 2;
   const d = 360 + Math.random() * 80;
-  // 白天只出前 3 种弱敌, 保证种田时压力可控; 夜晚走完整 pickType
-  const t = weak ? ENEMY_TYPES[Math.floor(Math.random() * 3)] : pickType();
+  const t = pickType();
   const mul = 1 + 0.10 * (dayNumber - 1);
   const hp = Math.round(t.hp * mul);
   enemies.push({
@@ -1362,7 +1395,7 @@ function spawnMini(x, y, color) {
 }
 
 // ===== Boss (每夜一只, 高血大体积, 环绕弹幕+蓄力冲刺, 掉稀有增益) =====
-let bossT = 60;   // 距下一只 boss 的秒数
+let bossT = RHYTHM.bossNightDelay;   // 距下一只 boss 的秒数
 function spawnBoss() {
   const a = Math.random() * Math.PI * 2;
   const hp = Math.round(150 + 70 * (dayNumber - 1));   // 血量按天数成长
@@ -1661,7 +1694,7 @@ function reset(preserveProgress = false) {
   $('settle').style.display = 'none';
   spawnTimer = 0;
   deadTimer = 0;
-  bossT = 12;
+  bossT = RHYTHM.bossNightDelay;
   shakeT = 0; shakeDur = 0; shakeMag = 0;
   gameState = 'playing';
   actionQueued = false;
@@ -1833,12 +1866,12 @@ function loop(t) {
     if (phase === 'night') {
       spawnTimer += dt;
       const nightT = NIGHT_LEN - phaseT;
-      const spawnRate = Math.max(0.18, 0.9 - nightT * 0.012);
+      const spawnRate = Math.max(RHYTHM.spawnMin, RHYTHM.spawnBase - nightT * RHYTHM.spawnRamp);
       if (spawnTimer > spawnRate) {
         spawnTimer = 0;
         spawnEnemy();
-        if (nightT > 12 && Math.random() < 0.5) spawnEnemy();
-        if (nightT > 24 && Math.random() < 0.4) spawnEnemy();
+        if (nightT > RHYTHM.extraSpawn1 && Math.random() < 0.5) spawnEnemy();
+        if (nightT > RHYTHM.extraSpawn2 && Math.random() < 0.4) spawnEnemy();
       }
 
       // Boss 波次: 每夜一只
@@ -1847,14 +1880,8 @@ function loop(t) {
         bossT = 999;
         spawnBoss();
       }
-    } else {
-      // 白天保留少量弱敌: 每 4s 一只, 补足升级节奏
-      spawnTimer += dt;
-      if (spawnTimer > 4) {
-        spawnTimer = 0;
-        spawnEnemy(true);
-      }
     }
+    // 白天不刷怪: 普通敌人和 Boss 都不生成, 已在场敌人保留(清晨结算时会按原逻辑清场)
 
     player.update(dt);
     if (actionQueued) { actionQueued = false; farmAction(); }
@@ -2223,6 +2250,31 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
+  // Shift 多点路径标记 (橙色虚线 + 菱形路径点, 与青色右键目标区分)
+  if (gameState === 'playing' && pathTargets.length) {
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = '#ffc857';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(player.x - camX, player.y - camY);
+    for (const pt of pathTargets) ctx.lineTo(pt.x - camX, pt.y - camY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffc857';
+    for (const pt of pathTargets) {
+      const sx = pt.x - camX, sy = pt.y - camY;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 4);
+      ctx.lineTo(sx + 4, sy);
+      ctx.lineTo(sx, sy + 4);
+      ctx.lineTo(sx - 4, sy);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // 暂停提示
   if (gameState === 'paused') {
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -2377,7 +2429,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261107230555 -->
-<script>window.__BUILD='20261107230555';</script>
+
+<!-- build:20261107234912 -->
+<script>window.__BUILD='20261107234912';</script>
 </body>
 </html>
