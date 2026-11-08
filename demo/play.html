@@ -214,7 +214,7 @@
   .chatlog .cline.sys { color: #8899aa; }
   .chatopts { display: flex; gap: 8px; flex-wrap: wrap; }
   .teamrow button { min-width: 60px; }
-  .teamopt { grid-template-columns: 1fr auto !important; border-top: 0 !important; }
+  .teamopt { grid-template-columns: 1fr auto auto !important; border-top: 0 !important; }
   .teamrow button:disabled { opacity: 0.5; cursor: default; }
   .catpanel { width: 540px; max-height: 82vh; overflow-y: auto; }
   .catsec { margin-top: 8px; }
@@ -284,10 +284,12 @@
   <div id="pondhint" style="color:#7df9ff">鱼塘: 0 块 · 下一块 160 金 (P 放置/移除, 靠近按 F 钓鱼)</div>
   <div>存货: 猫粮 <span id="catfoodhud">2</span> · 狗粮 <span id="dogfoodhud">0</span></div>
   <div id="buffhud" style="display:none;color:#ffd166">加速中: <span id="bufftext"></span></div>
+  <div id="musichud" style="display:none;color:#c9d4c0"></div>
   <div>成长: 技能点 <span id="sp">0</span> · 饰品 <span id="acc">0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
-  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝/钓鱼 · G 狗 · E 宝箱 · P 鱼塘 · Q 交谈 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝/钓鱼 · G 狗 · E 宝箱 · P 鱼塘 · R 交谈 · 自动存档</div>
+  <div class="key">乐手: 空格 判定音符 · 1-5 选音高 · Shift+1-4 / Q/E 切音色</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -413,7 +415,7 @@
       <button data-topic="night">问问夜里</button>
       <button data-topic="bye">先走了</button>
     </div>
-    <button id="chatclose" class="close">关闭（Q / Esc）</button>
+    <button id="chatclose" class="close">关闭（R / Esc）</button>
   </div>
 </div>
 
@@ -491,17 +493,23 @@ async function loadAllChars() {
     }
   }
   usingChar = charNames.includes('villager') ? 'villager' : (charNames[0] || null);
+  // 乐手复用女孩像素素材 (无独立美术资源), 以角色名/音符标记区分
+  if (!charTextures.musician) {
+    charTextures.musician = charTextures.girl || charTextures[charNames[0]] || null;
+    if (charTextures.musician && !charNames.includes('musician')) charNames.push('musician');
+  }
   if (usingChar) playerTex = charTextures[usingChar];
 }
 
 // ===== 角色选择 (标题屏) =====
 const CHAR_NAMES = {
   villager: '村民', girl: '女孩', elder: '长者', merchant: '商人', child: '小孩',
-  fisherman: '渔夫', smith: '铁匠', hunter: '猎人', cat: '猫咪',
+  fisherman: '渔夫', smith: '铁匠', hunter: '猎人', cat: '猫咪', musician: '乐手',
 };
 const CHAR_TIPS = {
   villager: '基础型', girl: '快速低血', elder: '慢速高攻', merchant: '均衡', child: '极速脆皮',
   fisherman: '稳健耐久', smith: '高攻高血', hunter: '均衡速射', cat: '极速连射',
+  musician: '非战斗 · 系带辅助',
 };
 // 人物背景 + 与背景呼应的小被动 (对本人生效, 换谁扮演手感不同)
 const CHAR_LORE = {
@@ -602,6 +610,17 @@ const CHAR_LORE = {
       heart: ['（它把一只旧铃铛推到你脚边, 铃铛已经不会响了。）', '（它翻了个身, 露出肚皮, 又假装无事发生。）'],
       work: ['（它叼来一只旧手套, 放在你脚边, 像是炫耀今天的收获。）', '（猫在田埂上巡视了一圈, 尾巴翘得很高。）'],
       night: ['（猫的眼睛在黑暗里亮了一下, 随后跳上屋顶。）', '（它缩到你脚边, 耳朵贴着你, 警戒着四周。）'],
+    },
+  },
+  musician: {
+    bg: '背着乐器走村串巷的人。不打仗, 但她的旋律能让身边的人站得更稳、走得更快。',
+    passive: { name: '旋律共鸣', desc: '系带增益 +15%' },
+    chat: {
+      greet: '先别说话, 听这一段。',
+      here: ['风穿过琴弦的时候, 会自己响一声。', '我走到哪儿都带着它, 心里就不空。'],
+      heart: ['有一首曲子我一直没弹完, 总觉得还差最后一个音。', '有人听懂了, 我就不算白弹。'],
+      work: ['今天调了三次弦, 手指头都磨热了。', '演出不急着赶场, 先把音校准。'],
+      night: ['夜里的曲子要轻一点, 别把不该来的东西招来。', '你走前面, 我在后面跟着, 琴声能给你壮胆。'],
     },
   },
 };
@@ -752,8 +771,14 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'g') { if (gameState === 'playing' || dogOpen) toggleDog(); return; }   // 狗的搜寻设置
+  if (k === 'e' || k === 'q') {
+    // 乐手: Q/E 切换音色 (E 在有宝箱时仍优先开箱)
+    if (musicianActive() && k === 'q') { setTimbre(timbre + 1); return; }
+    if (musicianActive() && k === 'e' && !nearestChest(CHEST_OPEN_R)) { setTimbre(timbre + 1); return; }
+  }
   if (k === 'e') { if (gameState === 'playing') openChest(); return; }   // 开启附近的 Boss 宝箱
-  if (k === 'q') { if (gameState === 'playing' || chatOpen) toggleChat(); return; }   // 与伙伴交谈
+  if (k === 'r') { if (gameState === 'playing' || chatOpen) toggleChat(); return; }   // 与伙伴交谈 (Q/E 让位给音色)
+  if (k === 'q') return;
   if (k === 'p') { if (gameState === 'playing' || pondMode) togglePondMode(); return; }   // 鱼塘: 自由放置/移除
   if (k === 'enter') {
     if (gameState === 'fishing') { closeFishing(); return; }
@@ -761,9 +786,24 @@ window.addEventListener('keydown', (e) => {
     closeSettlement();
     return;
   }
-  if (k === ' ') { if (gameState === 'playing') actionQueued = true; return; }
-  if (k >= '1' && k <= String(Math.min(9, CROPS.length))) {
-    if (gameState !== 'playing') return;   // 只在游戏中选种: 升级卡/队伍/商店/交谈/安家/结算等界面不误改
+  if (k === ' ') {
+    if (gameState === 'playing') {
+      // 乐手音游: 空格优先判定; 判定区没有音符时落回常规农活
+      if (musicianActive() && judgeNote()) return;
+      actionQueued = true;
+    }
+    return;
+  }
+  if (k >= '1' && k <= '9') {
+    if (gameState !== 'playing') return;   // 只在游戏中: 界面里不误触
+    if (musicianActive() && k <= '4' && e.shiftKey) { setTimbre(Number(k) - 1); return; }   // Shift+数字切音色
+    if (musicianActive()) {
+      // 1-5: 手动指定音高生成音符; >5 忽略
+      const p = Number(k);
+      if (p >= 1 && p <= 5) { spawnNote(p, true); return; }
+      return;
+    }
+    if (k > String(Math.min(9, CROPS.length))) return;
     selectedCrop = Number(k) - 1;
     updateFarmHud();
     return;
@@ -1863,6 +1903,242 @@ function renderFishing() {
 }
 document.getElementById('fishclose').addEventListener('click', closeFishing);
 
+// ===== 乐手系带 (C8) =====
+// 乐手向另一名角色射出系带, 再由该角色向半径内角色辐射; 每个时段只激活一种能力, 用颜色区分.
+const RIBBON_ABILITIES = [
+  { key: 'regen',   name: '恢复', cn: '绿', color: 'green' },
+  { key: 'speed',   name: '移速', cn: '蓝', color: 'blue' },
+  { key: 'defense', name: '防御', cn: '橙', color: 'orange' },
+  { key: 'attack',  name: '攻击', cn: '红', color: 'red' },
+];
+const RIBBON_SEG = 18;         // 每 18 秒轮换一种系带能力
+let ribbonShow = true;         // 全局显示/隐藏 (只影响视觉, 增益照常生效)
+let musicRegenT = { player: 0, partner: 0 };
+// 音游状态 (C9): 只做判定/连击/分数/增益联动, 不输出音频
+let musicScore = 0, musicCombo = 0, musicBest = 0;
+let musicJudgeT = 0, musicJudgeText = '';
+let notes = [];
+let noteSpawnT = 0;
+let timbre = 0;
+const TIMBRES = [
+  { name: '古筝', color: 'green' },
+  { name: '军鼓', color: 'orange' },
+  { name: '琵琶', color: 'purple' },
+  { name: '哨笛', color: 'blue' },
+];
+const NOTE_ZONE_X = 118, NOTE_TOL = 34;
+
+function rhythmMul() {
+  // 连击/分数提高系带强度, 有明确上限, 避免无限叠加
+  return Math.min(1.8, 1 + Math.min(0.6, musicCombo * 0.02) + Math.min(0.5, musicScore / 1500));
+}
+function ribbonStrength(m) {
+  const mul = rhythmMul() * (isMusician(m) ? 1.15 : 1);   // 乐手被动: 系带增益 +15%
+  return {
+    regen: Math.max(1, Math.min(3, Math.round((1 + instCount(m, 'guzheng')) * mul))),
+    attack: Math.max(1, Math.min(8, Math.round((1 + instCount(m, 'drum')) * mul))),
+    defense: Math.min(0.25, (0.05 + instCount(m, 'pipa') * 0.03) * mul),
+    speed: Math.min(0.30, (0.06 + instCount(m, 'flute') * 0.04) * mul),
+    radius: Math.min(220, 150 + instCount(m, 'harp') * 18),
+    maxLinks: Math.min(4, 3 + instCount(m, 'bell')),
+    mul,
+  };
+}
+function ribbonData() {
+  const acts = getActors();
+  const m = acts.find((a) => isMusician(a));
+  if (!m) return null;
+  const target = acts.find((a) => a !== m);
+  if (!target) return null;
+  const s = ribbonStrength(m);
+  const ability = RIBBON_ABILITIES[Math.floor(gameTime / RIBBON_SEG) % RIBBON_ABILITIES.length];
+  const linked = acts.filter((a) => a !== m && Math.hypot(a.x - target.x, a.y - target.y) <= s.radius).slice(0, s.maxLinks);
+  const set = new Set([m, target, ...linked]);
+  return { m, target, linked, ability, s, set };
+}
+function ribbonSpeedMul(a) {
+  const d = ribbonData();
+  if (!d || d.ability.key !== 'speed' || !d.set.has(a)) return 1;
+  return 1 + d.s.speed;
+}
+function ribbonDmgTakenMul(a) {
+  const d = ribbonData();
+  if (!d || d.ability.key !== 'defense' || !d.set.has(a)) return 1;
+  return 1 - d.s.defense;
+}
+function ribbonAtkBonus(a) {
+  const d = ribbonData();
+  if (!d || d.ability.key !== 'attack' || !d.set.has(a)) return 0;
+  return d.s.attack;
+}
+function updateRibbons(dt) {
+  const d = ribbonData();
+  if (!d || d.ability.key !== 'regen') { musicRegenT.player = 0; musicRegenT.partner = 0; return; }
+  for (const a of d.set) {
+    const k = roleKey(a);
+    musicRegenT[k] = (musicRegenT[k] || 0) + dt;
+    if (musicRegenT[k] < 2) continue;
+    musicRegenT[k] = 0;
+    if (a.hp >= a.maxHp) continue;
+    a.hp = Math.round(Math.min(a.maxHp, a.hp + d.s.regen));
+    popText(a.x, a.y - 34, '+' + d.s.regen, '#7dff9b', 10);
+    saveDirty = true;
+  }
+}
+function drawRibbons() {
+  if (!ribbonShow) return;
+  const d = ribbonData();
+  if (!d) return;
+  const col = FX_COLORS[d.ability.color] || '#fff';
+  const mx = d.m.x - camX, my = d.m.y - camY - 12;
+  const tx = d.target.x - camX, ty = d.target.y - camY - 12;
+  ctx.save();
+  // 主系带: 透明发光细线, 呼吸式明暗
+  const pulse = 0.55 + 0.25 * Math.sin(gameTime * 4);
+  ctx.strokeStyle = col;
+  ctx.globalAlpha = 0.16;
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.globalAlpha = pulse;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(tx, ty); ctx.stroke();
+  // 辐射系带: 目标点到半径内其他角色
+  for (const a of d.linked) {
+    const ax = a.x - camX, ay = a.y - camY - 12;
+    ctx.globalAlpha = 0.14;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(ax, ay); ctx.stroke();
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(ax, ay); ctx.stroke();
+  }
+  // 可读的“已连接”标记: 头顶小圆环
+  ctx.globalAlpha = 1;
+  for (const a of d.set) {
+    const ax = a.x - camX, ay = a.y - camY - (a === d.m ? 20 : 18);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(ax, ay, 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ===== 音游 (C9, 仅玩家扮演乐手时) =====
+function musicianActive() {
+  return !!(player && isMusician(player) && !player.downed && activeChar === player && gameState === 'playing');
+}
+function spawnNote(pitch, manual) {
+  notes.push({ x: LOGIC_W - 6, pitch, colorKey: TIMBRES[timbre].color, judged: false, fade: 0, manual: !!manual });
+}
+function updateRhythm(dt) {
+  if (!musicianActive()) {
+    if (notes.length) { notes = []; musicCombo = 0; }
+    if (musicJudgeT > 0) musicJudgeT -= dt;
+    return;
+  }
+  noteSpawnT -= dt;
+  if (noteSpawnT <= 0) {
+    noteSpawnT = 0.55 + Math.random() * 0.75;
+    spawnNote(1 + Math.floor(Math.random() * 5), false);
+  }
+  for (const n of notes) {
+    if (n.judged) { n.fade += dt; continue; }
+    n.x -= 260 * dt;
+    if (n.x < 45) {   // 漏接: 只断连击, 不罚分
+      n.judged = true; n.fade = 0;
+      musicCombo = 0;
+      musicJudgeT = 0.22; musicJudgeText = 'MISS';
+    }
+  }
+  notes = notes.filter((n) => n.x > -20 && (!n.judged || n.fade < 0.3));
+  if (musicJudgeT > 0) musicJudgeT -= dt;
+}
+function judgeNote() {
+  if (!musicianActive()) return false;
+  let best = null, bd = NOTE_TOL;
+  for (const n of notes) {
+    if (n.judged) continue;
+    const dist = Math.abs(n.x - NOTE_ZONE_X);
+    if (dist < bd) { bd = dist; best = n; }
+  }
+  if (!best) return false;   // 判定区没有音符: 交还给常规农活
+  const perfect = bd < 14;   // 容错窗口: ±34px, 中心 ±14px 为 PERFECT
+  best.judged = true; best.fade = 0;
+  musicCombo++;
+  musicBest = Math.max(musicBest, musicCombo);
+  musicScore += Math.round((perfect ? 160 : 100) * (1 + (best.pitch - 1) * 0.08));
+  musicJudgeT = 0.25;
+  musicJudgeText = (perfect ? 'PERFECT' : 'GOOD') + ' · ' + best.pitch;
+  return true;
+}
+function setTimbre(i) {
+  timbre = (i + TIMBRES.length) % TIMBRES.length;
+  popText((activeChar || player).x, (activeChar || player).y - 34, '音色: ' + TIMBRES[timbre].name, '#c9d4c0', 10);
+}
+function drawRhythmLane() {
+  if (!musicianActive()) return;
+  const y = 330, h = 22;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,18,24,0.7)';
+  ctx.fillRect(0, y - 4, LOGIC_W, h + 8);
+  ctx.strokeStyle = 'rgba(125,249,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, y - 3.5, LOGIC_W - 1, h + 7);
+  // 判定区: 明确可见的绿色窗口
+  ctx.fillStyle = 'rgba(159,224,122,0.22)';
+  ctx.fillRect(NOTE_ZONE_X - 26, y, 52, h);
+  ctx.strokeStyle = '#9fe07a';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(NOTE_ZONE_X - 26, y, 52, h);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 10px monospace';
+  for (const n of notes) {
+    const col = FX_COLORS[n.colorKey] || '#fff';
+    ctx.globalAlpha = n.judged ? Math.max(0, 1 - n.fade / 0.3) : 1;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(n.x, y + h / 2 - 9);
+    ctx.lineTo(n.x + 9, y + h / 2);
+    ctx.lineTo(n.x, y + h / 2 + 9);
+    ctx.lineTo(n.x - 9, y + h / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#0b1418';
+    ctx.fillText(String(n.pitch), n.x, y + h / 2 + 3.5);
+  }
+  ctx.globalAlpha = 1;
+  if (musicJudgeT > 0) {
+    ctx.globalAlpha = Math.max(0, musicJudgeT / 0.25);
+    ctx.fillStyle = musicJudgeText.indexOf('PERFECT') === 0 ? '#ffd166' : (musicJudgeText === 'MISS' ? '#ff8f6b' : '#9fe07a');
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(musicJudgeText, NOTE_ZONE_X, y - 12);
+    ctx.globalAlpha = 1;
+  }
+  if (musicCombo > 1) {
+    ctx.fillStyle = '#eaffff';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(musicCombo + ' COMBO', LOGIC_W - 10, y - 10);
+    ctx.textAlign = 'center';
+  }
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+function updateMusicHud() {
+  const el = $('musichud');
+  if (!el) return;
+  const d = ribbonData();
+  const musician = musicianActive();
+  if (!d && !musician) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const parts = [];
+  if (d) parts.push('系带[' + d.ability.name + '/' + d.ability.cn + '] 连接 ' + d.set.size + ' 人 · ' + (ribbonShow ? '显示' : '隐藏'));
+  if (musician) parts.push('音游 ' + musicCombo + ' 连 · ' + musicScore + ' 分 · 增益 x' + rhythmMul().toFixed(2) + ' · 音色 ' + TIMBRES[timbre].name);
+  el.textContent = parts.join(' · ');
+}
+
 function farmAction() {
   if (gameState !== 'playing') return;
   const me = activeChar || player;
@@ -2275,6 +2551,18 @@ const ACC_POOL = [
 let dogFood = 0;
 // 按角色独立保存的成长物: sp=技能点, acc=已获得的饰品 id
 let items = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
+// 乐手乐器卡组: 按角色独立累计, 与常规技能池分离; 存档字段 music.inst
+let inst = { player: {}, partner: {} };
+function addInst(a, id) {
+  const k = roleKey(a);
+  if (!inst[k]) inst[k] = {};
+  inst[k][id] = (inst[k][id] || 0) + 1;
+}
+function instCount(a, id) {
+  const k = roleKey(a);
+  return (inst[k] && inst[k][id]) || 0;
+}
+function isMusician(a) { return charOfActor(a) === 'musician'; }
 let digCD = { player: 0, partner: 0 };
 let digPity = { player: 0, partner: 0 };   // 软保底计数(未出稀有的连续次数)
 
@@ -2580,6 +2868,8 @@ function saveGame() {
       // 鱼塘: 独立于 v4 农田数组单独存, 旧档缺省为空
       ponds: ponds.map((p) => ({ gx: p.gx, gy: p.gy })),
       fishCaught,
+      // 乐器卡组 / 系带视觉开关: 旧档缺省为空与显示
+      music: { inst: { player: { ...inst.player }, partner: { ...inst.partner } }, ribbonShow },
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     saveDirty = false;
@@ -2710,6 +3000,18 @@ function loadGame() {
     // 鱼塘为后加可选字段: 旧档读档为空, 不破坏 v4 地块结构
     ponds = readPonds(s.ponds);
     fishCaught = isNum(s.fishCaught) ? Math.max(0, Math.floor(s.fishCaught)) : 0;
+    // 乐器卡组: 后加可选字段, 旧档为空; 只接受已知乐器并限制等级
+    inst = { player: {}, partner: {} };
+    if (s.music && s.music.inst) {
+      for (const k of ['player', 'partner']) {
+        const src = s.music.inst[k];
+        if (!src || typeof src !== 'object') continue;
+        for (const card of INSTRUMENTS) {
+          if (isNum(src[card.id])) inst[k][card.id] = Math.max(0, Math.min(20, Math.floor(src[card.id])));
+        }
+      }
+    }
+    ribbonShow = (s.music && typeof s.music.ribbonShow === 'boolean') ? s.music.ribbonShow : true;
     pendingStats = Object.keys(pStats).length ? pStats : null;
     pendingPartnerStats = Object.keys(paStats).length ? paStats : null;
     pendingPlayerChar = (chars.player && typeof chars.player.char === 'string') ? chars.player.char : null;
@@ -2888,6 +3190,7 @@ function updateHud() {
   }
   updateFarmHud();
   updatePartnerTaskHud();
+  updateMusicHud();
 }
 // 自动选卡开关: 默认关, 只有明确打开时玩家升级才会 3 秒兜底自动选
 function updateAutoPickHud() {
@@ -2940,8 +3243,17 @@ function renderTeam() {
     renderTeam();
     saveDirty = true;
   });
+  const ribBtn = document.createElement('button');
+  ribBtn.textContent = ribbonShow ? '隐藏系带' : '显示系带';
+  ribBtn.title = '只影响视觉, 增益不受影响';
+  ribBtn.addEventListener('click', () => {
+    ribbonShow = !ribbonShow;
+    renderTeam();
+    saveDirty = true;
+  });
   opt.appendChild(optLab);
   opt.appendChild(optBtn);
+  opt.appendChild(ribBtn);
   box.appendChild(opt);
   const members = player ? [player, partner].filter(Boolean) : [];
   for (const a of members) {
@@ -3162,7 +3474,7 @@ class Actor {
     this.vx = 0; this.vy = 0;
 
     if (moving) {
-      const spd = this.speed * (colaT[roleKey(this)] > 0 ? COLA_MUL : 1) * passiveSpeedMul(this);
+      const spd = this.speed * (colaT[roleKey(this)] > 0 ? COLA_MUL : 1) * passiveSpeedMul(this) * ribbonSpeedMul(this);
       this.vx = dx * spd;
       this.vy = dy * spd;
       this.x += this.vx * dt;
@@ -3188,9 +3500,9 @@ class Actor {
       if (this.state !== 'idle') { this.state = 'idle'; this.frameIdx = 0; this.frameTimer = 0; }
     }
 
-    // 自动攻击
+    // 自动攻击 (乐手非战斗, 不主动出手)
     this.atkTimer -= dt;
-    if (this.atkTimer <= 0) {
+    if (this.atkTimer <= 0 && !isMusician(this)) {
       let target = null, tD = Infinity;
       const hc = homeCenter();
       for (const e of enemies) {
@@ -3213,7 +3525,7 @@ class Actor {
             x: this.x, y: this.y - 12,
             vx: Math.cos(a) * this.projSpeed,
             vy: Math.sin(a) * this.projSpeed,
-            dmg: this.dmg * passiveDmgMul(this), life: 1.5, pierce: this.pierce, hits: null, dead: false, owner: this,
+            dmg: Math.round(this.dmg * passiveDmgMul(this) + ribbonAtkBonus(this)), life: 1.5, pierce: this.pierce, hits: null, dead: false, owner: this,
             fx: this.role === 'partner' ? 'blue' : 'red',
           });
         }
@@ -3304,7 +3616,7 @@ class Actor {
   takeDamage(dmg) {
     if (this.iframe > 0 || this.downed) return;
     // HP 全程整数: 减伤系数可能产生小数, 这里统一取整, 避免 0.5 血
-    this.hp = Math.max(0, Math.round(this.hp - Math.max(1, dmg * passiveDmgTakenMul(this))));
+    this.hp = Math.max(0, Math.round(this.hp - Math.max(1, dmg * passiveDmgTakenMul(this) * ribbonDmgTakenMul(this))));
     this.iframe = 0.4;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -3782,6 +4094,7 @@ function addShake(t, mag) {
 // 素材角色属性微调 (不同角色差异), 玩家与伙伴共用同一套映射
 function applyCharStats(a, n) {
   if (n === 'girl') { a.speed = 100; a.dmg = 6; a.atkSpeed = 0.4; a.maxHp = 80; a.hp = 80; }
+  else if (n === 'musician') { a.speed = 105; a.dmg = 0; a.atkSpeed = 0.5; a.maxHp = 110; a.hp = 110; }
   else if (n === 'elder') { a.speed = 60; a.dmg = 12; a.atkSpeed = 0.8; a.maxHp = 130; a.hp = 130; }
   else if (n === 'merchant') { a.speed = 85; a.dmg = 10; a.atkSpeed = 0.6; }
   else if (n === 'child') { a.speed = 110; a.dmg = 5; a.atkSpeed = 0.35; a.maxHp = 70; a.hp = 70; }
@@ -3897,6 +4210,9 @@ function reset(preserveProgress = false) {
     catTask = 'home';
     ponds = [];
     fishCaught = 0;
+    inst = { player: {}, partner: {} };
+    ribbonShow = true;
+    musicScore = 0; musicCombo = 0; musicBest = 0; notes = [];
   }
   pondMode = false;
   fishGame = null;
@@ -3958,8 +4274,19 @@ const UPGRADES = [
   { id: 'boomer', ico: '🪃', name: '回旋镖',    desc: '飞出折返, 升级缩短冷却', apply: p => p.boomerang += 1 },
   { id: 'laser',  ico: '🔦', name: '激光',      desc: '瞬发贯穿光束, 升级缩短冷却', apply: p => p.laser += 1 },
 ];
+// 乐器卡组: 乐手专用抽卡池, 不参与常规三选一; 全部效果围绕系带
+const INSTRUMENTS = [
+  { id: 'guzheng', ico: '曲', name: '古筝',       desc: '恢复系带每次治疗 +1 (上限 3)', apply: p => addInst(p, 'guzheng') },
+  { id: 'drum',    ico: '鼓', name: '军鼓',       desc: '攻击系带加成 +1 (上限 8)',     apply: p => addInst(p, 'drum') },
+  { id: 'pipa',    ico: '琶', name: '琵琶',       desc: '防御系带减伤 +3% (上限 25%)',   apply: p => addInst(p, 'pipa') },
+  { id: 'flute',   ico: '笛', name: '苏格兰哨笛', desc: '移速系带 +4% (上限 30%)',       apply: p => addInst(p, 'flute') },
+  { id: 'harp',    ico: '琴', name: '竖琴',       desc: '系带辐射半径 +18 (上限 220)',   apply: p => addInst(p, 'harp') },
+  { id: 'bell',    ico: '钟', name: '编钟',       desc: '系带可多连接 1 人 (上限 4)',    apply: p => addInst(p, 'bell') },
+];
 // 伙伴暂不参与飞刀/回旋镖/激光三件套武器, 自动选卡时排除
+// 乐手 (玩家或伙伴) 升级只从「乐器卡组」抽卡, 不进入常规技能池
 function upgradePool(actor) {
+  if (actor && charOfActor(actor) === 'musician') return INSTRUMENTS;
   if (actor && actor.role === 'partner') {
     return UPGRADES.filter(c => c.id !== 'knife' && c.id !== 'boomer' && c.id !== 'laser');
   }
@@ -4132,6 +4459,8 @@ function loop(t) {
 
     gameTime += dt;
     updateFarm(dt);
+    updateRibbons(dt);
+    updateRhythm(dt);
     // 猫的自动农场调度: 定时批量执行; 喂猫粮只缩短间隔, 不额外增加工作量
     if (catFeedT > 0) catFeedT -= dt;
     if (catTask === 'home') {
@@ -4419,6 +4748,19 @@ function drawDog() {
   ctx.fillText(dogFeedT > 0 ? label + ' · 加速' : label, sx, sy - top - 3);
 }
 
+// 乐手视觉标记: 复用女孩素材时靠头顶音叉形标记区分
+function drawMusicianMark(a) {
+  if (!a || !isMusician(a)) return;
+  const sx = Math.round(a.x - camX), sy = Math.round(a.y - camY) - 36;
+  const col = FX_COLORS[TIMBRES[timbre].color] || '#9fe07a';
+  ctx.save();
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx - 6, sy - 6); ctx.lineTo(sx - 6, sy); ctx.lineTo(sx - 2, sy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx + 2, sy - 6); ctx.lineTo(sx + 2, sy); ctx.lineTo(sx + 6, sy); ctx.stroke();
+  ctx.restore();
+}
+
 // ===== 夜晚光照: 离屏遮罩挖光孔, 真正照亮已绘制的地面与实体; 光源跟随技能弹道, 命中或射程结束即熄灭 =====
 const NIGHT_DARK = 'rgba(7,12,38,0.62)';
 let lightCv = null, lightCtx = null;
@@ -4661,9 +5003,10 @@ function render() {
   }
 
   // 玩家与伙伴
-  if (player) player.draw();
+  if (player) { player.draw(); drawMusicianMark(player); }
   if (partner && !partner.downed) {
     partner.draw();
+    drawMusicianMark(partner);
     // 伙伴头顶血条: 由队伍面板统一开关控制
     if (hpBarOn) {
       const sx = Math.round(partner.x - camX);
@@ -4746,6 +5089,8 @@ function render() {
 
   // 夜色: 整体压暗, 但由技能光源/随身微光挖出光孔, 被照到的地面与实体恢复原亮度
   if (phase === 'night') drawNightLighting();
+  // 乐手系带: 画在夜色之上, 保证彩色连接线可见
+  drawRibbons();
 
   // 触屏摇杆 (仅移动端显示)
   if (IS_TOUCH && touch.active) {
@@ -4831,6 +5176,9 @@ function render() {
     ctx.font = '12px Courier New';
     ctx.fillText('击杀: ' + kills + ' · ' + Math.ceil(deadTimer) + ' 秒后自动重来', LOGIC_W/2, LOGIC_H/2 + 20);
   }
+
+  // 乐手音游轨道 (最上层, 不遮挡世界但需要清晰判定)
+  drawRhythmLane();
 }
 
 // ===== 多标签页单写锁 =====
@@ -4973,7 +5321,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108135347 -->
-<script>window.__BUILD='20261108135347';</script>
+
+<!-- build:20261108135753 -->
+<script>window.__BUILD='20261108135753';</script>
 </body>
 </html>
