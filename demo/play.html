@@ -252,6 +252,7 @@
   <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0 / 玉米 0 / 南瓜 0</span></div>
   <div id="plothint">地块: 9 块 · 下一块 50 金 (B 购买)</div>
   <div>存货: 猫粮 <span id="catfoodhud">2</span> · 狗粮 <span id="dogfoodhud">0</span></div>
+  <div id="buffhud" style="display:none;color:#ffd166">加速中: <span id="bufftext"></span></div>
   <div>成长: 技能点 <span id="sp">0</span> · 饰品 <span id="acc">0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
@@ -359,7 +360,9 @@
     <div id="chatlog" class="chatlog"></div>
     <div class="chatopts">
       <button data-topic="here">聊聊眼前</button>
+      <button data-topic="work">问问今天的活</button>
       <button data-topic="heart">你的心事</button>
+      <button data-topic="night">问问夜里</button>
       <button data-topic="bye">先走了</button>
     </div>
     <button id="chatclose" class="close">关闭（Q / Esc）</button>
@@ -461,6 +464,8 @@ const CHAR_LORE = {
       greet: '吃了没？没吃就先坐会儿。',
       here: ['地里的活儿不急, 人急了反而容易出错。', '村里安静的时候最好, 连狗都不叫。'],
       heart: ['前阵子东头的老屋塌了半边, 我一直想去修, 可总腾不出手。', '我不太会说漂亮话, 但答应过的事就会做到底。'],
+      work: ['地里的活计差不多收尾了, 等种子都补上就能歇口气。', '谁家要搭把手我就去一趟, 反正不差这一时。'],
+      night: ['夜里我守着院门, 听见动静就喊一声。', '天黑后别走太远, 这地方晚上不太平。'],
     },
   },
   girl: {
@@ -470,6 +475,8 @@ const CHAR_LORE = {
       greet: '你来啦！我刚跑完一圈, 气还没喘匀。',
       here: ['我总觉得, 再快一点就能把想做的事都做完。', '等会儿一起去看看村口那棵老树吧, 花开得正好。'],
       heart: ['那颗糖我一直留着, 想送给一个特别的人, 可又怕人家不喜欢。', '有时候跑得越快, 越觉得心里空空的。'],
+      work: ['今天把整条田埂跑了两遍, 脚都快不是自己的了。', '等活干完, 我们去树下坐会儿吧, 我带了水。'],
+      night: ['晚上我有点怕黑, 不过跑起来就不怕了。', '怪物来了你就跟在我后面, 我跑得快。'],
     },
   },
   elder: {
@@ -479,6 +486,8 @@ const CHAR_LORE = {
       greet: '坐吧。茶还温着。',
       here: ['日子一天一天过, 地也一天一天长, 急不得。', '我年轻时也想过离开, 后来发现哪儿都一样, 心安就好。'],
       heart: ['我总梦见年轻时的那片田, 醒来却记不清种的是什么。', '人老了不怕慢, 就怕没人说话。你来了就好。'],
+      work: ['活计不急, 慢慢来。你能想到明天的事, 已经比我年轻时强。', '手慢有手慢的好处, 少出错。'],
+      night: ['夜里点盏灯吧, 灯亮着, 人心就定。', '我年轻时守过更, 知道什么时候最容易犯困。'],
     },
   },
   merchant: {
@@ -488,6 +497,8 @@ const CHAR_LORE = {
       greet: '哟, 稀客。今天想看点什么？',
       here: ['行情这东西, 看不懂的时候最好别硬看。', '这地方的买卖不大, 人情却比港口厚。'],
       heart: ['我出来这么多年, 箱子越装越满, 家却越来越远。', '有时候算完账, 会忘了自己到底在攒什么。'],
+      work: ['今天货卖得还行, 就是补货的人手不够。', '你要是有闲, 帮我清点一下箱子, 我分你点辛苦钱。'],
+      night: ['港口那边夜里也热闹, 这儿倒是安静得让人不习惯。', '账本我收好了, 夜里要是出事, 先顾人, 别管货。'],
     },
   },
   child: {
@@ -497,6 +508,8 @@ const CHAR_LORE = {
       greet: '你来得正好！我正找东西呢。',
       here: ['我刚才在那边看到亮晶晶的东西, 捡起来又掉了, 真气人。', '大人总说别乱跑, 可不动弹多没意思。'],
       heart: ['我想快点长大, 这样就能帮上忙了。', '我藏了一颗最好看的石子, 谁都不给看——你想看吗？'],
+      work: ['我今天帮忙捡了好多东西, 手都酸了！', '等我再长高一点, 就能帮上大忙了。'],
+      night: ['夜里我不敢一个人出去, 你陪我好不好？', '我藏了个小灯, 怪物来了就照它！'],
     },
   },
   fisherman: {
@@ -506,6 +519,8 @@ const CHAR_LORE = {
       greet: '回来了。河上今天没什么风。',
       here: ['稳一点, 比什么都要紧。', '鱼不咬钩的时候, 我就坐着看水, 水会告诉你时候到了。'],
       heart: ['那年发大水, 我背出来三个人, 还有一个没赶上。', '有些事过去了, 可晚上静下来还是会想起。'],
+      work: ['河上今天风向不对, 饵下了半天, 鱼没动静。', '活计跟水一样, 急不得, 等它自己来。'],
+      night: ['夜里水面黑得像块石头, 走路得看着脚下。', '要是有事, 就往有光的地方跑, 别往河里跑。'],
     },
   },
   smith: {
@@ -515,6 +530,8 @@ const CHAR_LORE = {
       greet: '小心点, 别碰着炉子。',
       here: ['活儿做得慢没关系, 做一件是一件。', '铁要烧透了才好打, 人也是。'],
       heart: ['我一直想打一把最好的刀, 可总差一点火候。', '手上有伤不怕, 怕的是心气泄了。'],
+      work: ['炉子今天没熄过, 手上的活排到明天了。', '你要用工具, 跟我说一声, 我顺手给你打一把。'],
+      night: ['夜里我不睡太死, 炉子还有火, 能挡一阵。', '铁器放在门边, 真出事了好拿。'],
     },
   },
   hunter: {
@@ -524,6 +541,8 @@ const CHAR_LORE = {
       greet: '脚步轻一点, 林子里的东西都听着呢。',
       here: ['看见了吗？那边草在动。', '打猎不是比谁快, 是比谁先沉住气。'],
       heart: ['我追过一只鹿很久, 最后它停下来看着我, 我反而没下手。', '有时候我在想, 追的到底是猎物, 还是别的什么。'],
+      work: ['今天树林里有新鲜的脚印, 我追了半里地。', '打猎不急, 先看风向, 再看地上的痕迹。'],
+      night: ['夜里正是好东西出来的时候, 不过也最危险。', '跟紧我, 别踩到不该踩的地方。'],
     },
   },
   cat: {
@@ -533,6 +552,8 @@ const CHAR_LORE = {
       greet: '喵。',
       here: ['（它蹭了蹭你的裤脚, 尾巴扫过田埂。）', '（猫蹲在篱笆上, 盯着远处看了很久。）'],
       heart: ['（它把一只旧铃铛推到你脚边, 铃铛已经不会响了。）', '（它翻了个身, 露出肚皮, 又假装无事发生。）'],
+      work: ['（它叼来一只旧手套, 放在你脚边, 像是炫耀今天的收获。）', '（猫在田埂上巡视了一圈, 尾巴翘得很高。）'],
+      night: ['（猫的眼睛在黑暗里亮了一下, 随后跳上屋顶。）', '（它缩到你脚边, 耳朵贴着你, 警戒着四周。）'],
     },
   },
 };
@@ -1215,14 +1236,24 @@ function buyPlot() {
     return;
   }
   const needH = farmHFor(plots.length + 1);
+  // 下方空间不足时家园自动上移刚好腾出一行, 不再要求玩家手动按 H
+  let shiftY = 0;
   if (home.y + needH > WORLD_H - 10) {
-    shopMsg('家园下方没有空间：先按 H 把家园往上方搬，再继续扩张', true);
+    shiftY = home.y + needH - (WORLD_H - 10);
+  }
+  if (home.y - shiftY < 0) {
+    shopMsg('地图上下空间已用尽，无法继续扩张', true);
     return;
   }
   coins -= cost;
+  if (shiftY > 0) {
+    home.y -= shiftY;
+    // 守卫伙伴同步平移, 保持在以新家园为中心的守卫圈内
+    if (partner && partner.task === 'guard') partner.y = Math.max(30, Math.min(WORLD_H - 10, partner.y - shiftY));
+  }
   plots.push({ state: 'empty', crop: 0, start: 0 });
   afterTrade();
-  shopMsg('已解锁第 ' + plots.length + ' 块地，花费 ' + cost + ' 金', false);
+  shopMsg('已解锁第 ' + plots.length + ' 块地，花费 ' + cost + ' 金' + (shiftY > 0 ? '（家园自动上移 ' + shiftY + 'px）' : ''), false);
   const hc = homeCenter();
   popText(hc.x, hc.y + farmH() / 2 - 20, '新地块 +1', '#ffd166', 11);
 }
@@ -1570,13 +1601,23 @@ function updateFarmHud() {
   const key = roleKey(activeChar);
   $('sp').textContent = items[key].sp;
   $('acc').textContent = items[key].acc.length;
+  // 持续增益倒计时: 可乐(按角色)/猫粮/狗粮, 无增益时隐藏整行
+  const buffs = [];
+  if (colaT.player > 0) buffs.push('玩家可乐 ' + Math.ceil(colaT.player) + 's');
+  if (colaT.partner > 0) buffs.push('伙伴可乐 ' + Math.ceil(colaT.partner) + 's');
+  if (catFeedT > 0) buffs.push('猫粮 ' + Math.ceil(catFeedT) + 's');
+  if (dogFeedT > 0) buffs.push('狗粮 ' + Math.ceil(dogFeedT) + 's');
+  $('buffhud').style.display = buffs.length ? 'block' : 'none';
+  if (buffs.length) $('bufftext').textContent = buffs.join(' · ');
   const cost = nextPlotCost();
-  $('plothint').textContent = '地块: ' + plots.length + ' 块 · 下一块 ' + cost + ' 金 (B 购买)';
+  $('plothint').textContent = '地块: ' + plots.length + ' 块 · 下一块 ' + cost + ' 金' + (coins < cost ? ' (还差 ' + (cost - coins) + ')' : ' (B 购买)');
   if ($('buyplot')) {
     $('buyplot').textContent = '买地 ' + cost + '金';
-    $('buyplot').disabled = coins < cost;
+    $('buyplot').disabled = false;   // 始终可点: 金币不足时点击给出「还差 N 金」提示
     $('plotcount').textContent = '共 ' + plots.length + ' 块';
-    $('plotnext').textContent = '下一块 ' + cost + ' 金';
+    $('plotnext').textContent = coins < cost
+      ? '下一块 ' + cost + ' 金 · 还差 ' + (cost - coins) + ' 金'
+      : '下一块 ' + cost + ' 金';
   }
 }
 
@@ -2482,7 +2523,7 @@ function updatePartnerTaskHud() {
 // 队伍管理面板: 打开时暂停游戏, 列出玩家与伙伴, 可切换扮演角色 / 设置守家
 let teamOpen = false;
 let chatOpen = false;
-let chatTopicCount = { here: 0, heart: 0 };
+let chatTopicCount = { here: 0, heart: 0, work: 0, night: 0 };
 function charLabel(a) {
   if (a === player) return '玩家 · ' + (CHAR_NAMES[usingChar] || usingChar || '');
   return '伙伴 · ' + (CHAR_NAMES[partnerChar] || partnerChar || '');
@@ -2568,20 +2609,34 @@ function situationText() {
   const t = phase === 'night' ? '天已经黑了, 外面不太平。' : '天还亮着, 风里有田里的味道。';
   return t + '田里有 ' + ready + ' 块地能收了, 袋里 ' + coins + ' 金。';
 }
+// 玩家回应池: 按话题与次数轮换, 避免每次都是同一句
+const REPLY_POOLS = {
+  here: ['嗯, 我再看看。', '你说得对, 我记下了。', '先把眼前这摊忙完。'],
+  heart: ['（你安静地听着, 没有打断。）', '（你没有急着安慰, 只是陪着他坐了一会儿。）', '（你点了点头, 把这句话记在心里。）'],
+  work: ['我这边也差不多, 忙完这阵就歇。', '有你这句话, 干活都轻快些。', '先把眼前这摊收拾了吧, 别攒到明天。'],
+  night: ['夜里我多留个神, 你也小心。', '灯我会点着, 真有事就喊我。', '背靠背吧, 谁也别落单。'],
+};
 function chatTopic(kind) {
   const lore = CHAR_LORE[partnerChar];
   if (!lore) return;
   if (kind === 'here') {
     chatAppend('sys', '（' + situationText() + '）');
-    const line = lore.chat.here[chatTopicCount.here % lore.chat.here.length];
-    chatTopicCount.here++;
-    chatAppend('partner', line);
-    chatAppend('you', '嗯, 我再看看。');
+    const i = chatTopicCount.here++;
+    chatAppend('partner', lore.chat.here[i % lore.chat.here.length]);
+    chatAppend('you', REPLY_POOLS.here[i % REPLY_POOLS.here.length]);
   } else if (kind === 'heart') {
-    const line = lore.chat.heart[chatTopicCount.heart % lore.chat.heart.length];
-    chatTopicCount.heart++;
-    chatAppend('partner', line);
-    chatAppend('you', '（你安静地听着, 没有打断。）');
+    const i = chatTopicCount.heart++;
+    chatAppend('partner', lore.chat.heart[i % lore.chat.heart.length]);
+    chatAppend('you', REPLY_POOLS.heart[i % REPLY_POOLS.heart.length]);
+  } else if (kind === 'work') {
+    const i = chatTopicCount.work++;
+    chatAppend('partner', lore.chat.work[i % lore.chat.work.length]);
+    chatAppend('you', REPLY_POOLS.work[i % REPLY_POOLS.work.length]);
+  } else if (kind === 'night') {
+    chatAppend('sys', phase === 'night' ? '（外面黑得看不见路, 屋里的灯还亮着。）' : '（窗外天色还亮, 夜还没完全落下来。）');
+    const i = chatTopicCount.night++;
+    chatAppend('partner', lore.chat.night[i % lore.chat.night.length]);
+    chatAppend('you', REPLY_POOLS.night[i % REPLY_POOLS.night.length]);
   } else {
     chatAppend('you', '先走了, 回头见。');
     chatAppend('partner', '嗯, 路上小心。');
@@ -2596,7 +2651,7 @@ function openChat() {
   }
   chatOpen = true;
   gameState = 'chat';
-  chatTopicCount = { here: 0, heart: 0 };
+  chatTopicCount = { here: 0, heart: 0, work: 0, night: 0 };
   resetInput();
   $('chat').style.display = 'flex';
   const lore = CHAR_LORE[partnerChar] || CHAR_LORE.villager;
@@ -3399,7 +3454,7 @@ function reset(preserveProgress = false) {
   teamOpen = false;
   $('team').style.display = 'none';
   chatOpen = false;
-  chatTopicCount = { here: 0, heart: 0 };
+  chatTopicCount = { here: 0, heart: 0, work: 0, night: 0 };
   $('chat').style.display = 'none';
   catOpen = false;
   $('cat').style.display = 'none';
@@ -4403,7 +4458,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108114257 -->
-<script>window.__BUILD='20261108114257';</script>
+
+<!-- build:20261108114519 -->
+<script>window.__BUILD='20261108114519';</script>
 </body>
 </html>
