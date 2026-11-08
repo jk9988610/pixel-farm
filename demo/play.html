@@ -179,6 +179,15 @@
   .panel .msg { min-height: 18px; color: #ff8f6b; font-size: 11px; margin-top: 8px; text-align: center; }
   .panel .msg.ok { color: #9fe07a; }
   .panel .close { display: block; margin: 10px auto 0; }
+  .teamrow {
+    display: grid; grid-template-columns: 1fr 64px 72px;
+    gap: 8px; align-items: center;
+    padding: 8px 0; border-top: 1px solid #2c3a4c;
+  }
+  .teamrow .tname { color: #dfe8c8; }
+  .teamrow .tmeta { display: block; color: #8899aa; font-size: 10px; margin-top: 2px; }
+  .teamrow button { min-width: 60px; }
+  .teamrow button:disabled { opacity: 0.5; cursor: default; }
 </style>
 </head>
 <body>
@@ -194,7 +203,7 @@
 </div>
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
-<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · 左键点角色切换 · T 切换伙伴任务 · Esc 暂停</div>
+<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · 左键点角色切换 · T 队伍管理 · Esc 暂停</div>
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
   <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2 / 玉米 2 / 南瓜 0</span></div>
@@ -256,6 +265,14 @@
     <div class="msg" id="hm_msg">确认后家园与 9 块地整体迁移到此处；作物生长计时不受影响。</div>
     <button id="hm_ok" class="close">确认安家（Enter）</button>
     <button id="hm_cancel" class="close" style="margin-top:6px">取消（Esc）</button>
+  </div>
+</div>
+<div id="team" class="overlay">
+  <div class="panel">
+    <div class="ptitle">队伍管理</div>
+    <div id="teamlist"></div>
+    <div class="msg" id="teammsg">选择要扮演的角色，或让伙伴留在家园守卫；面板打开时游戏暂停。</div>
+    <button id="teamclose" class="close">关闭（T / Esc）</button>
   </div>
 </div>
 
@@ -456,13 +473,14 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === 'escape') {
     if (gameState === 'homemove') { cancelHomeMove(); return; }
+    if (teamOpen) { closeTeam(); return; }
     if (shopOpen) { closeShop(); return; }
     togglePause();
     return;
   }
   if (k === 'h') { openHomeMove(); return; }   // 在此安家: 就地确认后家园与地块整体迁移
   if (k === 'b') { if (gameState === 'playing' || shopOpen) toggleShop(); return; }
-  if (k === 't') { cyclePartnerTask(); return; }   // 切换伙伴任务: 跟随战斗 / 守卫家园
+  if (k === 't') { if (gameState === 'playing' || teamOpen) toggleTeam(); return; }   // 队伍管理面板(打开时暂停)
   if (k === 'enter') {
     if (gameState === 'homemove') { confirmHomeMove(); return; }
     closeSettlement();
@@ -786,7 +804,6 @@ let home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
 function homeCenter() { return { x: home.x + FARM_W / 2, y: home.y + FARM_H / 2 }; }
 const HOME_MOVE_MIN = 120;                 // 安家最小距离: 太近不允许, 防止原地反复搬迁
 let pendingHomeMove = null;                // 待确认的安家目标 {x,y,dist,dir}
-let homeFx = null;                         // 迁徙平移动画 {fromX,fromY,t,dur}
 const FOLLOW_FAR = 96, FOLLOW_NEAR = 34;   // 跟随舒适距离: 超过远值才追, 小于近值退开
 const GUARD_R = 120;                        // 守卫家园: 只处理进入此半径的敌人
 const CROPS = [
@@ -1017,10 +1034,6 @@ function nearestPlot() {
 
 function updateFarm(dt) {
   farmTime += dt;
-  if (homeFx) {
-    homeFx.t += dt;
-    if (homeFx.t >= homeFx.dur) homeFx = null;
-  }
   for (const p of plots) {
     if (p.state === 'growing' && farmTime - p.start >= CROPS[p.crop].grow) {
       p.state = 'ready';
@@ -1116,10 +1129,7 @@ function cancelHomeMove() {
 
 function confirmHomeMove() {
   if (gameState !== 'homemove' || !pendingHomeMove) return;
-  const fromX = home.x, fromY = home.y;
-  home = { x: pendingHomeMove.x, y: pendingHomeMove.y };
-  // 短平移动画: 绘制端从旧位置滑到新位置, 逻辑坐标立即生效
-  homeFx = { fromX, fromY, t: 0, dur: 0.35 };
+  home = { x: pendingHomeMove.x, y: pendingHomeMove.y };   // 逻辑与绘制立即落到新位置, 不做平移补间
   // 守卫伙伴同步到新家园附近, 不留原地
   if (partner && partner.task === 'guard') {
     const hc = homeCenter();
@@ -1132,13 +1142,6 @@ function confirmHomeMove() {
   const me = activeChar || player;
   popText(me.x, me.y - 34, '家园已迁至此地', '#9fe07a', 12);
   saveGame();   // 迁移后立即写档
-}
-
-// 迁徙动画的绘制偏移: 逻辑坐标已是新位置, 偏移从旧位置收敛到 0
-function homeFxOffset() {
-  if (!homeFx) return { x: 0, y: 0 };
-  const k = 1 - Math.min(1, homeFx.t / homeFx.dur);
-  return { x: (homeFx.fromX - home.x) * k, y: (homeFx.fromY - home.y) * k };
 }
 
 // ===== 存档 v3 (localStorage, 兼容 v1/v2 旧档) =====
@@ -1362,10 +1365,8 @@ function drawCrop(cx, by, c, stage) {
 
 function drawFarm() {
   const near = nearestPlot();
-  const off = homeFxOffset();
   for (let i = 0; i < plots.length; i++) {
-    const [x0, y0] = plotPos(i);
-    const x = x0 + off.x, y = y0 + off.y;
+    const [x, y] = plotPos(i);
     const sx = x - camX, sy = y - camY;
     if (sx < -40 || sx > LOGIC_W + 40 || sy < -40 || sy > LOGIC_H + 40) continue;
     const p = plots[i];
@@ -1444,23 +1445,79 @@ function updateAutoPickHud() {
 $('autopick').addEventListener('click', () => { autoPick = !autoPick; updateAutoPickHud(); });
 updateAutoPickHud();
 
-// 伙伴任务: 跟随战斗 / 守卫家园 (点 HUD 或按 T 切换)
-function partnerTaskName() {
-  return (partner && partner.task === 'guard') ? '守卫家园' : '跟随战斗';
+// 伙伴任务: 跟随战斗 / 守卫家园 (队伍管理面板里设置)
+function partnerTaskName(a) {
+  return (a && a.task === 'guard') ? '守卫家园' : '跟随战斗';
 }
 function updatePartnerTaskHud() {
   const el = $('ptask');
   if (!el) return;
-  el.textContent = '伙伴: ' + partnerTaskName();
+  el.textContent = '队伍 (T) · ' + partnerTaskName(partner);
   el.style.color = (partner && partner.task === 'guard') ? '#9fe07a' : '#7df9ff';
 }
-function cyclePartnerTask() {
-  if (!partner || gameState !== 'playing') return;
-  partner.task = (partner.task === 'guard') ? 'follow' : 'guard';
-  updatePartnerTaskHud();
-  popText(partner.x, partner.y - 42, '伙伴任务: ' + partnerTaskName(), partner.task === 'guard' ? '#9fe07a' : '#7df9ff', 11);
+// 队伍管理面板: 打开时暂停游戏, 列出玩家与伙伴, 可切换扮演角色 / 设置守家
+let teamOpen = false;
+function charLabel(a) {
+  if (a === player) return '玩家 · ' + (CHAR_NAMES[usingChar] || usingChar || '');
+  return '伙伴 · ' + (CHAR_NAMES[partnerChar] || partnerChar || '');
 }
-$('ptask').addEventListener('click', cyclePartnerTask);
+function renderTeam() {
+  const box = $('teamlist');
+  if (!box) return;
+  box.innerHTML = '';
+  const members = player ? [player, partner].filter(Boolean) : [];
+  for (const a of members) {
+    const row = document.createElement('div');
+    row.className = 'teamrow';
+    const info = document.createElement('div');
+    const nm = document.createElement('div');
+    nm.className = 'tname';
+    nm.textContent = charLabel(a) + (a === activeChar ? '（扮演中）' : '');
+    const meta = document.createElement('div');
+    meta.className = 'tmeta';
+    meta.textContent = 'HP ' + Math.max(0, Math.ceil(a.hp)) + '/' + a.maxHp + ' · ' + partnerTaskName(a);
+    info.appendChild(nm); info.appendChild(meta);
+    const bPlay = document.createElement('button');
+    bPlay.textContent = '选择';
+    bPlay.disabled = (a === activeChar) || a.downed;
+    bPlay.onclick = () => { setControlled(a); renderTeam(); };
+    const bGuard = document.createElement('button');
+    if (a === player) {
+      bGuard.style.visibility = 'hidden';   // 玩家角色只提供扮演切换
+    } else {
+      bGuard.textContent = a.task === 'guard' ? '取消守家' : '守家';
+      bGuard.onclick = () => {
+        a.task = (a.task === 'guard') ? 'follow' : 'guard';
+        renderTeam();
+        updatePartnerTaskHud();
+      };
+    }
+    row.appendChild(info); row.appendChild(bPlay); row.appendChild(bGuard);
+    box.appendChild(row);
+  }
+}
+function openTeam() {
+  if (gameState !== 'playing' || !player) return;
+  teamOpen = true;
+  gameState = 'team';
+  resetInput();
+  renderTeam();
+  $('team').style.display = 'flex';
+}
+function closeTeam() {
+  if (!teamOpen) return;
+  teamOpen = false;
+  $('team').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+  lastT = performance.now();   // 避免面板停留时长被算进游戏时间
+}
+function toggleTeam() {
+  if (teamOpen) closeTeam();
+  else openTeam();
+}
+$('ptask').addEventListener('click', openTeam);
+$('teamclose').addEventListener('click', closeTeam);
 
 // 指向目标点的单位方向
 function dirTo(from, to) {
@@ -1605,6 +1662,8 @@ class Actor {
   followDir() {
     let g = null, gd = 240;
     for (const gem of gems) {
+      // 界外宝石不可达: 跳过, 否则伙伴会一直朝地图边界走且永远拾不到
+      if (gem.x < 10 || gem.x > WORLD_W - 10 || gem.y < 20 || gem.y > WORLD_H) continue;
       const d = Math.hypot(gem.x - this.x, gem.y - this.y);
       if (d < gd) { gd = d; g = gem; }
     }
@@ -1822,7 +1881,7 @@ function weaponHit(e, base, burstN) {
 }
 // 稀有宝石: boss 掉落, 拾取直接获得随机增益
 function spawnRareGem(x, y) {
-  gems.push({ x, y, value: 0, kind: 'rare', bob: 0, vx: 0, vy: 0 });
+  gems.push(clampGem({ x, y, value: 0, kind: 'rare', bob: 0, vx: 0, vy: 0 }));
 }
 function applyRandomUpgrade(actor) {
   const a = actor || player;
@@ -1939,13 +1998,20 @@ function updateWeapons(dt) {
 // ===== 经验宝石 (敌人死亡掉落, 靠近吸附, 拾取攒经验) =====
 const GEM_MAGNET_R = 90;   // 吸附半径
 const GEM_PICK_R = 10;     // 拾取半径
+const GEM_BOUND = 24;      // 宝石可拾取范围: 贴边目标会让伙伴顶墙, 统一收进世界内
+const GEM_TOP = 34;
+function clampGem(g) {
+  g.x = Math.max(GEM_BOUND, Math.min(WORLD_W - GEM_BOUND, g.x));
+  g.y = Math.max(GEM_TOP, Math.min(WORLD_H - 14, g.y));
+  return g;
+}
 const GEM_MAX = 150;       // 场上宝石上限, 超过则回收最老的
 function spawnGem(x, y, value) {
   if (gems.length >= GEM_MAX) {
     // 上限回收: 最老的宝石经验并入新宝石, 实体数量不无限堆积
     value += gems.shift().value;
   }
-  gems.push({ x, y, value, bob: Math.random() * Math.PI * 2, vx: 0, vy: 0 });
+  gems.push(clampGem({ x, y, value, bob: Math.random() * Math.PI * 2, vx: 0, vy: 0 }));
 }
 function updateGems(dt) {
   const actors = getActors();
@@ -1979,6 +2045,7 @@ function updateGems(dt) {
     g.vx *= 0.9; g.vy *= 0.9;
     g.x += g.vx * dt;
     g.y += g.vy * dt;
+    clampGem(g);   // 吸附冲量可能把宝石推到界外, 收回来后伙伴才不会追不到
     g.bob += dt * 4;
   }
   gems = gems.filter(g => !g.dead);
@@ -2125,6 +2192,8 @@ function reset(preserveProgress = false) {
   shopOpen = false;
   $('shop').style.display = 'none';
   $('settle').style.display = 'none';
+  teamOpen = false;
+  $('team').style.display = 'none';
   spawnTimer = 0;
   deadTimer = 0;
   bossT = RHYTHM.bossNightDelay;
@@ -2300,7 +2369,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove') {
+    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team') {
       render();
       return;
     }
@@ -2640,8 +2709,7 @@ function render() {
   // 守卫家园范围: 伙伴处于守卫任务时显示淡绿色虚线圆 (范围一目了然)
   if (partner && !partner.downed && partner.task === 'guard') {
     const hc = homeCenter();
-    const off = homeFxOffset();
-    const hx = Math.round(hc.x + off.x - camX), hy = Math.round(hc.y + off.y - camY);
+    const hx = Math.round(hc.x - camX), hy = Math.round(hc.y - camY);
     ctx.strokeStyle = 'rgba(159, 224, 122, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([5, 5]);
@@ -2963,7 +3031,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108001335 -->
-<script>window.__BUILD='20261108001335';</script>
+
+<!-- build:20261108003223 -->
+<script>window.__BUILD='20261108003223';</script>
 </body>
 </html>
