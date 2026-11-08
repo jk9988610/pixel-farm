@@ -231,6 +231,35 @@
   .dogrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   .dogrow input[type=range] { flex: 1; accent-color: #9fe07a; }
   .dogrow button.on { border-color: #9fe07a; color: #9fe07a; }
+  /* 鱼塘 / 钓鱼 */
+  .fishpanel { width: 580px; }
+  .fishbody { display: flex; gap: 16px; align-items: center; justify-content: center; }
+  .fishtrack {
+    position: relative; width: 64px; height: 210px;
+    background: #0f1720; border: 1px solid #2c3a4c;
+    border-radius: 4px; overflow: hidden;
+  }
+  .fishicon {
+    position: absolute; left: 12px; width: 38px; height: 10px; margin-top: -5px;
+    background: #ffd166; border-radius: 50% 60% 60% 50%;
+    box-shadow: 0 0 7px #ffd166;
+  }
+  .fishicon::after {
+    content: ''; position: absolute; right: -8px; top: -2px;
+    border-left: 8px solid #ffd166;
+    border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  }
+  .fishwin {
+    position: absolute; left: 0; right: 0;
+    background: rgba(120,255,150,0.22);
+    border-top: 1px solid #9fe07a; border-bottom: 1px solid #9fe07a;
+  }
+  #fishscene { border: 1px solid #2c3a4c; border-radius: 4px; }
+  .fishbar {
+    height: 8px; margin-top: 10px; background: #0f1720;
+    border: 1px solid #2c3a4c; border-radius: 4px; overflow: hidden;
+  }
+  #fishprog { height: 100%; width: 0; background: #9fe07a; transition: width 0.08s linear; }
 </style>
 </head>
 <body>
@@ -252,12 +281,13 @@
   <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2 / 玉米 2 / 南瓜 0</span></div>
   <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0 / 玉米 0 / 南瓜 0</span></div>
   <div id="plothint">地块: 9 块 · 下一块 50 金 (B 购买)</div>
+  <div id="pondhint" style="color:#7df9ff">鱼塘: 0 块 · 下一块 160 金 (P 放置/移除, 靠近按 F 钓鱼)</div>
   <div>存货: 猫粮 <span id="catfoodhud">2</span> · 狗粮 <span id="dogfoodhud">0</span></div>
   <div id="buffhud" style="display:none;color:#ffd166">加速中: <span id="bufftext"></span></div>
   <div>成长: 技能点 <span id="sp">0</span> · 饰品 <span id="acc">0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
-  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝 · G 狗 · E 宝箱 · Q 交谈 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝/钓鱼 · G 狗 · E 宝箱 · P 鱼塘 · Q 交谈 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -290,6 +320,7 @@
     <div class="coinline">金币: <span id="shopcoins">100</span> · 行情每日浮动</div>
     <div class="coinline" id="shopsum"></div>
     <div class="shoprow"><span>地块</span><button id="buyplot">买地</button><span id="plotcount">共 9 块</span><span class="trend flat">扩张</span><span id="plotnext">下一块 50 金</span></div>
+    <div class="shoprow"><span>鱼塘</span><button id="buypond">放置鱼塘</button><span id="pondcount">共 0 块</span><span class="trend flat">钓鱼</span><span id="pondnext">下一块 160 金（放置时扣款）</span></div>
     <div class="shopsec">种子 / 作物</div>
     <div class="shoprow head"><span>作物</span><span>买种子</span><span>持有</span><span>行情</span><span>卖出</span></div>
     <div id="shoprows"></div>
@@ -352,6 +383,21 @@
     <div class="dogrow"><span>移动速度</span><input type="range" id="dogspeed" min="40" max="140" step="5"><span id="dogspeedv">70</span></div>
     <div class="msg" id="dogmsg">狗会把范围内的经验与掉落物都叼回来；可以留在家园附近，也可以跟着当前角色。</div>
     <button id="dogclose" class="close">关闭（G / Esc）</button>
+  </div>
+</div>
+<div id="fishing" class="overlay">
+  <div class="panel fishpanel">
+    <div class="ptitle">钓鱼 · <span id="fishpondinfo">鱼塘 1 块</span></div>
+    <div class="fishbody">
+      <div class="fishtrack" id="fishtrack">
+        <div class="fishwin" id="fishwin"></div>
+        <div class="fishicon" id="fishicon"></div>
+      </div>
+      <canvas id="fishscene" width="300" height="230"></canvas>
+    </div>
+    <div class="fishbar"><div id="fishprog"></div></div>
+    <div class="msg" id="fishingmsg">等待鱼儿上钩…</div>
+    <button id="fishclose" class="close">收杆 / 关闭（Esc）</button>
   </div>
 </div>
 
@@ -683,6 +729,8 @@ window.addEventListener('keydown', (e) => {
     pathTargets = [];
   }
   if (k === 'escape') {
+    if (gameState === 'fishing') { closeFishing(); return; }
+    if (pondMode) { togglePondMode(); return; }
     if (gameState === 'homemove') { cancelHomeMove(); return; }
     if (teamOpen) { closeTeam(); return; }
     if (chatOpen) { closeChat(); return; }
@@ -696,11 +744,19 @@ window.addEventListener('keydown', (e) => {
   if (k === 'b') { if (gameState === 'playing' || shopOpen) toggleShop(); return; }
   if (k === 't') { if (gameState === 'playing' || teamOpen) toggleTeam(); return; }   // 队伍管理面板(打开时暂停)
   if (k === 'c') { if (gameState === 'playing' || catOpen) toggleCat(); return; }   // 猫的自动农场设置
-  if (k === 'f') { if (gameState === 'playing') tryPlayerDig(); return; }   // 挖宝: 站原地即可, 白天黑夜不限
+  if (k === 'f') {
+    if (gameState === 'playing') {
+      // 靠近鱼塘优先钓鱼, 否则原地挖宝
+      if (nearestPond(110)) openFishing(); else tryPlayerDig();
+    }
+    return;
+  }
   if (k === 'g') { if (gameState === 'playing' || dogOpen) toggleDog(); return; }   // 狗的搜寻设置
   if (k === 'e') { if (gameState === 'playing') openChest(); return; }   // 开启附近的 Boss 宝箱
   if (k === 'q') { if (gameState === 'playing' || chatOpen) toggleChat(); return; }   // 与伙伴交谈
+  if (k === 'p') { if (gameState === 'playing' || pondMode) togglePondMode(); return; }   // 鱼塘: 自由放置/移除
   if (k === 'enter') {
+    if (gameState === 'fishing') { closeFishing(); return; }
     if (gameState === 'homemove') { confirmHomeMove(); return; }
     closeSettlement();
     return;
@@ -828,6 +884,11 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   const p = toLogic(e);
   mouse.x = p.x; mouse.y = p.y;
+  // 鱼塘模式: 左键放置/移除, 右键退出; 不再触发移动
+  if (pondMode) {
+    if (e.button === 0) { pondModeClick(p); return; }
+    if (e.button === 2) { togglePondMode(); return; }
+  }
   // Shift + 左/右键: 追加路径点 (不清空已有路径, 支持多点串联)
   if (e.shiftKey && (e.button === 0 || e.button === 2)) {
     if (inputMode !== 'path') pathTargets = [];
@@ -866,6 +927,7 @@ canvas.addEventListener('pointerup', (e) => {
     if (e.pointerId === touch.id) resetTouch();
     return;
   }
+  if (pondMode) return;   // 鱼塘模式的点击已在 pointerdown 处理
   if (e.pointerId === leftPid) {
     const held = performance.now() - leftAt;
     leftHeld = false; leftPid = null;
@@ -1431,6 +1493,12 @@ document.getElementById('autocakepctup').addEventListener('click', () => { autoC
 document.getElementById('recruit').addEventListener('click', recruitPartner);
 document.getElementById('shopclose').addEventListener('click', closeShop);
 document.getElementById('buyplot').addEventListener('click', buyPlot);
+document.getElementById('buypond').addEventListener('click', () => {
+  const cost = pondCost();
+  if (coins < cost) { shopMsg('金币不足：还差 ' + (cost - coins) + ' 金', true); return; }
+  closeShop();
+  if (!pondMode) togglePondMode();
+});
 document.getElementById('settleok').addEventListener('click', closeSettlement);
 document.getElementById('homebtn').addEventListener('click', openHomeMove);
 document.getElementById('hm_ok').addEventListener('click', confirmHomeMove);
@@ -1553,6 +1621,248 @@ function updateFarm(dt) {
   }
 }
 
+// ===== 鱼塘 (B5) =====
+// 与农田并存, 但完全独立: 不进 v4 的 plots 动态数组, 单独存 ponds, 旧档缺省为空.
+const POND_CELL = 48;          // 每块鱼塘占一个 48px 世界格, 位置由玩家自由选择
+const POND_BASE_COST = 160;    // 首块价格, 随数量递增
+const POND_MAX = 40;
+let ponds = [];                // [{gx, gy}] 世界格坐标
+let fishCaught = 0;
+let pondMode = false;          // 鱼塘放置/移除模式
+function pondCost() { return Math.round(POND_BASE_COST * Math.pow(1.28, ponds.length)); }
+function pondTile(gx, gy) { return ponds.find((p) => p.gx === gx && p.gy === gy); }
+function pondWorld(gx, gy) { return { x: gx * POND_CELL + POND_CELL / 2, y: gy * POND_CELL + POND_CELL / 2 }; }
+function pondBlockReason(gx, gy) {
+  const x = gx * POND_CELL, y = gy * POND_CELL;
+  if (x < 0 || y < 0 || x + POND_CELL > WORLD_W || y + POND_CELL > WORLD_H) return '超出地图边界';
+  if (pondTile(gx, gy)) return '这里已经有鱼塘';
+  // 农田矩形内不能放鱼塘: 保住现有农田自动化布局不被截断
+  const fh = farmH();
+  if (x < home.x + FARM_W && x + POND_CELL > home.x && y < home.y + fh && y + POND_CELL > home.y) return '不能占用农田';
+  return '';
+}
+// 上下左右相连的鱼塘视为同一片水域, 水域越大鱼越大
+function pondScaleAt(gx, gy) {
+  const seen = new Set([gx + ',' + gy]);
+  const stack = [[gx, gy]];
+  let n = 0;
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    n++;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = (cx + dx) + ',' + (cy + dy);
+      if (seen.has(k) || !pondTile(cx + dx, cy + dy)) continue;
+      seen.add(k);
+      stack.push([cx + dx, cy + dy]);
+    }
+  }
+  return n;
+}
+function nearestPond(maxD) {
+  const me = activeChar || player;
+  if (!me) return null;
+  let best = null, bd = maxD || 100;
+  for (const p of ponds) {
+    const c = pondWorld(p.gx, p.gy);
+    const d = Math.hypot(me.x - c.x, me.y - c.y);
+    if (d < bd) { bd = d; best = { gx: p.gx, gy: p.gy, x: c.x, y: c.y, scale: pondScaleAt(p.gx, p.gy) }; }
+  }
+  return best;
+}
+function togglePondMode() {
+  if (gameState !== 'playing') return;
+  pondMode = !pondMode;
+  if (pondMode) {
+    resetInput();
+    popText((activeChar || player).x, (activeChar || player).y - 30, '鱼塘模式: 左键放置/移除, 右键或 P 退出', '#7df9ff', 10);
+  }
+  updateFarmHud();
+}
+function pondModeClick(p) {
+  const gx = Math.floor((p.x + camX) / POND_CELL);
+  const gy = Math.floor((p.y + camY) / POND_CELL);
+  const existing = pondTile(gx, gy);
+  if (existing) {
+    ponds = ponds.filter((q) => q !== existing);
+    const c = pondWorld(gx, gy);
+    popText(c.x, c.y, '已移除鱼塘', '#ff8f6b', 10);
+    updateFarmHud();
+    saveGame();
+    return;
+  }
+  const why = pondBlockReason(gx, gy);
+  if (why) {
+    const c = pondWorld(gx, gy);
+    popText(c.x, c.y, why, '#ff8f6b', 10);
+    return;
+  }
+  if (ponds.length >= POND_MAX) { popText(homeCenter().x, homeCenter().y - 20, '鱼塘数量已达上限', '#ff8f6b', 10); return; }
+  const cost = pondCost();
+  if (coins < cost) {
+    popText(homeCenter().x, homeCenter().y - 20, '金币不足: 还差 ' + (cost - coins) + ' 金', '#ff8f6b', 10);
+    return;
+  }
+  coins -= cost;
+  ponds.push({ gx, gy });
+  const c = pondWorld(gx, gy);
+  popText(c.x, c.y - 12, '鱼塘 +1 · -' + cost + '金', '#9fe07a', 10);
+  updateFarmHud();
+  saveGame();
+}
+
+// ===== 钓鱼 (B6) =====
+// 左侧轨道: 鱼上下浮动, 绿色窗口带惯性与阻尼; 覆盖判定用「累计时间」, 短暂脱离不清零.
+let fishGame = null;
+function openFishing() {
+  if (gameState !== 'playing') return;
+  const p = nearestPond(110);
+  if (!p) { popText((activeChar || player).x, (activeChar || player).y - 28, '靠近鱼塘再按 F 钓鱼', '#ff8f6b', 10); return; }
+  resetInput();
+  const sceneFish = [];
+  for (let i = 0; i < 5; i++) {
+    sceneFish.push({ x: 20 + Math.random() * 260, y: 70 + Math.random() * 120, dir: Math.random() < 0.5 ? -1 : 1, speed: 12 + Math.random() * 22, size: 4 + Math.random() * 4, phase: Math.random() * Math.PI * 2 });
+  }
+  fishGame = {
+    pond: p, phase: 'wait', waitT: 0.8 + Math.random() * 1.8,
+    fishY: 0.5, fishV: 0, fishTarget: 0.5, retarget: 0,
+    maskY: 0.5, maskV: 0,
+    maskH: Math.max(0.24, 0.36 - Math.min(0.1, p.scale * 0.015)),
+    progress: 0, need: 2.0 + Math.min(1.2, p.scale * 0.12),
+    bobT: 0, biteT: 0, sceneFish,
+  };
+  gameState = 'fishing';
+  $('fishing').style.display = 'flex';
+  $('fishingmsg').textContent = '等待鱼儿上钩…';
+  renderFishing();
+}
+function closeFishing() {
+  if (gameState !== 'fishing') return;
+  fishGame = null;
+  $('fishing').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+  lastT = performance.now();
+}
+function finishFishing() {
+  const f = fishGame;
+  if (!f || f.phase === 'done') return;
+  f.phase = 'done';
+  const scale = f.pond.scale;
+  // 尺寸/价值与水域规模挂钩: 每多连一块, 鱼更大更值钱
+  const size = 0.7 + scale * 0.18 + Math.random() * 0.5;
+  const value = Math.round(size * 22);
+  coins += value;
+  fishCaught++;
+  f.result = { size, value };
+  $('fishingmsg').textContent = '收获 ' + size.toFixed(1) + ' 斤的鱼！+' + value + ' 金（Esc 收杆）';
+  updateFarmHud();
+  saveGame();
+}
+function updateFishing(dt) {
+  const f = fishGame;
+  if (!f) return;
+  f.bobT += dt;
+  for (const s of f.sceneFish) {
+    s.x += s.dir * s.speed * dt;
+    if (s.x < 12) { s.x = 12; s.dir = 1; }
+    if (s.x > 288) { s.x = 288; s.dir = -1; }
+    s.phase += dt * 4;
+  }
+  if (f.phase === 'wait') {
+    f.waitT -= dt;
+    if (f.waitT <= 0) {
+      f.phase = 'bite';
+      $('fishingmsg').textContent = '咬钩了！W/S 移动绿色窗口覆盖鱼, 累计覆盖即可收杆';
+    }
+    return;
+  }
+  if (f.phase !== 'bite') return;
+  f.biteT += dt;
+  // 鱼: 随机换目标点, 惯性+阻尼
+  f.retarget -= dt;
+  if (f.retarget <= 0) {
+    f.retarget = 0.45 + Math.random() * 0.9;
+    f.fishTarget = 0.12 + Math.random() * 0.76;
+  }
+  const fishSpeed = 0.55 + Math.min(0.5, f.pond.scale * 0.06);
+  f.fishV += (f.fishTarget - f.fishY) * fishSpeed * 3 * dt;
+  f.fishV *= Math.pow(0.82, dt * 60);
+  f.fishY += f.fishV * dt;
+  f.fishY = Math.max(0.05, Math.min(0.95, f.fishY));
+  // 绿色窗口: 加速度 + 阻尼, 不做瞬移
+  const dir = (keys.has('w') || keys.has('arrowup') ? -1 : 0) + (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
+  f.maskV += dir * 2.0 * dt;
+  f.maskV *= Math.pow(0.90, dt * 60);
+  f.maskY += f.maskV * dt;
+  const lo = f.maskH / 2, hi = 1 - f.maskH / 2;
+  if (f.maskY < lo) { f.maskY = lo; f.maskV = Math.max(0, f.maskV); }
+  if (f.maskY > hi) { f.maskY = hi; f.maskV = Math.min(0, f.maskV); }
+  // 累计覆盖: 离开不清零
+  if (Math.abs(f.fishY - f.maskY) <= f.maskH / 2) f.progress += dt;
+  if (f.progress >= f.need) finishFishing();
+}
+function drawFishScene() {
+  const f = fishGame;
+  if (!f) return;
+  if (!f.sceneCtx) { f.sceneCv = $('fishscene'); f.sceneCtx = f.sceneCv.getContext('2d'); }
+  const c = f.sceneCtx, W = 300, H = 230;
+  c.clearRect(0, 0, W, H);
+  const g = c.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#1b3b4a'); g.addColorStop(1, '#0d2028');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  for (let i = 0; i < 3; i++) {
+    c.strokeStyle = 'rgba(125,249,255,0.16)';
+    c.lineWidth = 1;
+    const y = 40 + i * 42 + Math.sin(f.bobT * 2 + i) * 4;
+    c.beginPath();
+    c.moveTo(6, y);
+    c.bezierCurveTo(90, y - 7, 210, y + 7, W - 6, y);
+    c.stroke();
+  }
+  for (const s of f.sceneFish) {
+    c.fillStyle = '#ffd166';
+    c.beginPath();
+    c.ellipse(s.x, s.y + Math.sin(s.phase) * 2, s.size, s.size * 0.55, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.moveTo(s.x - s.dir * s.size, s.y + Math.sin(s.phase) * 2);
+    c.lineTo(s.x - s.dir * (s.size + 6), s.y - 4 + Math.sin(s.phase) * 2);
+    c.lineTo(s.x - s.dir * (s.size + 6), s.y + 4 + Math.sin(s.phase) * 2);
+    c.closePath();
+    c.fill();
+  }
+  // 钓竿: 上钩后随浮标窜动弯曲, 回弹用正弦
+  const bend = f.phase === 'bite' || f.phase === 'done';
+  const bx = bend ? 205 + Math.sin(f.biteT * 5) * 28 : 205;
+  const by = bend ? 92 + Math.cos(f.biteT * 7) * 9 : 118;
+  const rodX = 296, rodY = 224;
+  const midX = (rodX + bx) / 2 + (bend ? 20 : 0);
+  const midY = (rodY + by) / 2 - 42;
+  c.strokeStyle = '#c9a66b'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(rodX, rodY); c.quadraticCurveTo(midX, midY, bx, by); c.stroke();
+  c.strokeStyle = 'rgba(220,240,255,0.7)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(bx, by); c.lineTo(bx, by + 30); c.stroke();
+  c.fillStyle = '#ff6b6b';
+  c.beginPath(); c.arc(bx, by + 32, 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fff'; c.fillRect(bx - 4, by + 31, 8, 2);
+  if (bend) {
+    c.strokeStyle = 'rgba(255,209,102,0.5)';
+    c.beginPath(); c.arc(bx, by + 32, 14 + Math.sin(f.biteT * 6) * 4, 0, Math.PI * 2); c.stroke();
+  }
+}
+function renderFishing() {
+  const f = fishGame;
+  if (!f) return;
+  $('fishicon').style.top = (f.fishY * 100) + '%';
+  const win = $('fishwin');
+  win.style.height = (f.maskH * 100) + '%';
+  win.style.top = ((f.maskY - f.maskH / 2) * 100) + '%';
+  $('fishprog').style.width = (Math.min(1, f.progress / f.need) * 100) + '%';
+  $('fishpondinfo').textContent = '鱼塘 ' + f.pond.scale + ' 块 · 鱼 ' + (0.7 + f.pond.scale * 0.18).toFixed(1) + ' 斤级';
+  drawFishScene();
+}
+document.getElementById('fishclose').addEventListener('click', closeFishing);
+
 function farmAction() {
   if (gameState !== 'playing') return;
   const me = activeChar || player;
@@ -1620,6 +1930,19 @@ function updateFarmHud() {
     $('plotnext').textContent = coins < cost
       ? '下一块 ' + cost + ' 金 · 还差 ' + (cost - coins) + ' 金'
       : '下一块 ' + cost + ' 金';
+  }
+  const pcost = pondCost();
+  if ($('pondhint')) {
+    $('pondhint').textContent = '鱼塘: ' + ponds.length + ' 块 · 下一块 ' + pcost + ' 金'
+      + (coins < pcost ? ' (还差 ' + (pcost - coins) + ')' : ' (P 放置/移除, 靠近按 F 钓鱼)')
+      + (pondMode ? ' · 鱼塘模式中' : '');
+  }
+  if ($('buypond')) {
+    $('buypond').textContent = '放置 ' + pcost + '金';
+    $('pondcount').textContent = '共 ' + ponds.length + ' 块';
+    $('pondnext').textContent = coins < pcost
+      ? '下一块 ' + pcost + ' 金 · 还差 ' + (pcost - coins) + ' 金'
+      : '下一块 ' + pcost + ' 金（放置时扣款）';
   }
 }
 
@@ -2254,6 +2577,9 @@ function saveGame() {
       activeRole: activeChar && activeChar.role === 'partner' ? 'partner' : 'player',
       // 非玩家角色头顶血条统一开关 (旧档默认显示)
       hpBar: hpBarOn,
+      // 鱼塘: 独立于 v4 农田数组单独存, 旧档缺省为空
+      ponds: ponds.map((p) => ({ gx: p.gx, gy: p.gy })),
+      fishCaught,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     saveDirty = false;
@@ -2279,6 +2605,25 @@ function failLoad(reason) {
   saveBlocked = true;
   console.warn('存档读取失败, 已保留原存档:', reason);
   return false;
+}
+
+// 鱼塘存档字段解析: 只接受地图内的整数格, 去重并限制数量, 异常项丢弃不阻塞整档
+function readPonds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const p of raw) {
+    if (!p || !isNum(p.gx) || !isNum(p.gy)) continue;
+    const gx = Math.floor(p.gx), gy = Math.floor(p.gy);
+    const k = gx + ',' + gy;
+    if (seen.has(k)) continue;
+    const x = gx * POND_CELL, y = gy * POND_CELL;
+    if (x < 0 || y < 0 || x + POND_CELL > WORLD_W || y + POND_CELL > WORLD_H) continue;
+    seen.add(k);
+    out.push({ gx, gy });
+    if (out.length >= POND_MAX) break;
+  }
+  return out;
 }
 
 function loadGame() {
@@ -2362,6 +2707,9 @@ function loadGame() {
     digCD = { player: 0, partner: 0 };
     digPity = { player: 0, partner: 0 };
     plots = loadedPlots;
+    // 鱼塘为后加可选字段: 旧档读档为空, 不破坏 v4 地块结构
+    ponds = readPonds(s.ponds);
+    fishCaught = isNum(s.fishCaught) ? Math.max(0, Math.floor(s.fishCaught)) : 0;
     pendingStats = Object.keys(pStats).length ? pStats : null;
     pendingPartnerStats = Object.keys(paStats).length ? paStats : null;
     pendingPlayerChar = (chars.player && typeof chars.player.char === 'string') ? chars.player.char : null;
@@ -2481,6 +2829,43 @@ function drawFarm() {
     ctx.fillRect(sx + FARM_CELL / 2 - w / 2, sy - 13, w, 11);
     ctx.fillStyle = '#fff';
     ctx.fillText(label, sx + FARM_CELL / 2, sy - 4);
+  }
+}
+
+// 鱼塘: 独立于农田地块绘制, 只在世界坐标上占 48px 格
+function drawPonds() {
+  for (const p of ponds) {
+    const x = p.gx * POND_CELL, y = p.gy * POND_CELL;
+    const sx = x - camX, sy = y - camY;
+    if (sx < -POND_CELL || sx > LOGIC_W + POND_CELL || sy < -POND_CELL || sy > LOGIC_H + POND_CELL) continue;
+    ctx.fillStyle = '#1f6b86';
+    ctx.fillRect(sx, sy, POND_CELL, POND_CELL);
+    ctx.fillStyle = '#2a89a8';
+    ctx.fillRect(sx + 2, sy + 2, POND_CELL - 4, POND_CELL - 4);
+    ctx.strokeStyle = 'rgba(200,245,255,0.35)';
+    ctx.lineWidth = 1;
+    const t = farmTime * 1.5;
+    for (let i = 0; i < 2; i++) {
+      const yy = sy + 14 + i * 16 + Math.sin(t + (p.gx + p.gy) * 2 + i) * 2;
+      ctx.beginPath();
+      ctx.moveTo(sx + 8, yy);
+      ctx.lineTo(sx + POND_CELL - 8, yy);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#0e4a5f';
+    ctx.strokeRect(sx + 0.5, sy + 0.5, POND_CELL - 1, POND_CELL - 1);
+  }
+  if (pondMode) {
+    const gx = Math.floor((mouse.x + camX) / POND_CELL);
+    const gy = Math.floor((mouse.y + camY) / POND_CELL);
+    const sx = gx * POND_CELL - camX, sy = gy * POND_CELL - camY;
+    const existing = pondTile(gx, gy);
+    const ok = existing || !pondBlockReason(gx, gy);
+    ctx.strokeStyle = existing ? '#ff8f6b' : (ok ? '#9fe07a' : '#ff6b6b');
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 1, sy + 1, POND_CELL - 2, POND_CELL - 2);
+    ctx.fillStyle = existing ? 'rgba(255,143,107,0.18)' : (ok ? 'rgba(159,224,122,0.16)' : 'rgba(255,107,107,0.14)');
+    ctx.fillRect(sx + 2, sy + 2, POND_CELL - 4, POND_CELL - 4);
   }
 }
 
@@ -3495,7 +3880,12 @@ function reset(preserveProgress = false) {
     items = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
     hpBarOn = true;
     catTask = 'home';
+    ponds = [];
+    fishCaught = 0;
   }
+  pondMode = false;
+  fishGame = null;
+  $('fishing').style.display = 'none';
   shopOpen = false;
   colaT = { player: 0, partner: 0 };
   autoTickT = 5;
@@ -3689,6 +4079,15 @@ function loop(t) {
     if (lockTimer >= LOCK_HEARTBEAT) {
       lockTimer = 0;
       writeLock();
+    }
+
+    // 钓鱼: 游戏内暂停, 但小游戏继续跑 (累计覆盖时间)
+    if (gameState === 'fishing') {
+      updateFishing(dt);
+      renderFishing();
+      render();
+      updateHud();
+      return;
     }
 
     if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'chat' || gameState === 'cat' || gameState === 'dog') {
@@ -4102,6 +4501,8 @@ function render() {
 
   // 农场地块与作物
   drawFarm();
+  // 鱼塘 (独立地块体系, 与农田并存)
+  drawPonds();
   // 猫 NPC (在家园旁)
   drawCat();
   // 狗 NPC (在家园另一侧)
@@ -4517,7 +4918,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108115534 -->
-<script>window.__BUILD='20261108115534';</script>
+
+<!-- build:20261108134519 -->
+<script>window.__BUILD='20261108134519';</script>
 </body>
 </html>
