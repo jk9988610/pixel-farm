@@ -2040,8 +2040,7 @@ function drawFarm() {
   }
   if (near >= 0) {
     const p = plots[near];
-    const [x0, y0] = plotPos(near);
-    const x = x0 + off.x, y = y0 + off.y;
+    const [x, y] = plotPos(near);
     let label;
     if (p.state === 'empty') label = seeds[selectedCrop] > 0 ? '空格 播种' : '种子不足 (B 商店)';
     else if (p.state === 'ready') label = '空格 收获';
@@ -3358,6 +3357,78 @@ function drawDog() {
   ctx.fillText(dogFeedT > 0 ? label + ' · 加速' : label, sx, sy - top - 3);
 }
 
+// ===== 夜晚光照: 离屏遮罩挖光孔, 真正照亮已绘制的地面与实体; 光源跟随技能弹道, 命中或射程结束即熄灭 =====
+const NIGHT_DARK = 'rgba(7,12,38,0.62)';
+let lightCv = null, lightCtx = null;
+function nightLightCtx() {
+  if (!lightCv) {
+    lightCv = document.createElement('canvas');
+    lightCv.width = LOGIC_W; lightCv.height = LOGIC_H;
+    lightCtx = lightCv.getContext('2d');
+  }
+  return lightCtx;
+}
+// destination-out: 用径向渐变把遮罩的 alpha 擦掉, 露出下面的真实画面
+function punchLight(lc, x, y, r, a) {
+  if (r <= 0 || a <= 0) return;
+  if (x + r < 0 || x - r > LOGIC_W || y + r < 0 || y - r > LOGIC_H) return;
+  const g = lc.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(0,0,0,' + a + ')');
+  g.addColorStop(0.45, 'rgba(0,0,0,' + (a * 0.7) + ')');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  lc.fillStyle = g;
+  lc.beginPath();
+  lc.arc(x, y, r, 0, Math.PI * 2);
+  lc.fill();
+}
+function drawNightLighting() {
+  const lc = nightLightCtx();
+  lc.globalCompositeOperation = 'source-over';
+  lc.clearRect(0, 0, LOGIC_W, LOGIC_H);
+  lc.fillStyle = NIGHT_DARK;
+  lc.fillRect(0, 0, LOGIC_W, LOGIC_H);
+  lc.globalCompositeOperation = 'destination-out';
+
+  // 当前角色随身微光: 保证夜里能看清脚下
+  const me = activeChar || player;
+  if (me && !me.downed) punchLight(lc, me.x - camX, me.y - camY - 10, 96, 0.55);
+
+  // 普通子弹: 飞行中照亮, 命中敌人或 life 耗尽被移除后自然熄灭
+  for (const b of bullets) punchLight(lc, b.x - camX, b.y - camY, 52, 0.6);
+
+  // 环绕飞刀: 每把带小光, 随角色移动
+  if (player && player.knives > 0) {
+    for (let i = 0; i < player.knives; i++) {
+      const [kx, ky] = knifePos(i, player.knives);
+      punchLight(lc, kx - camX, ky - camY, 34, 0.42);
+    }
+  }
+
+  // 回旋镖
+  for (const b of booms) punchLight(lc, b.x - camX, b.y - camY, 58, 0.55);
+
+  // 激光: 沿光束取样照亮, 亮度随 ttl 淡出
+  for (const bm of beams) {
+    const k = bm.ttl / bm.max;
+    const dx = bm.x2 - bm.x1, dy = bm.y2 - bm.y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const n = Math.min(12, Math.max(1, Math.floor(len / 40)));
+    for (let i = 0; i <= n; i++) {
+      punchLight(lc, bm.x1 + dx * i / n - camX, bm.y1 + dy * i / n - camY, 60, 0.55 * k);
+    }
+  }
+
+  // 敌方弹幕: 微弱紫光, 让夜里的来袭方向可见
+  for (const b of ebullets) punchLight(lc, b.x - camX, b.y - camY, 22, 0.3);
+
+  // 稀有宝石微光, 便于夜里发现
+  for (const g of gems) {
+    if (g.kind === 'rare') punchLight(lc, g.x - camX, g.y - camY, 30, 0.35);
+  }
+
+  ctx.drawImage(lightCv, 0, 0);
+}
+
 function render() {
   ctx.save();
   // 屏幕震动: 幅度随时长衰减
@@ -3569,11 +3640,8 @@ function render() {
 
   ctx.restore();
 
-  // 夜色滤镜: 夜晚压暗偏蓝, 与白天形成明显区分
-  if (phase === 'night') {
-    ctx.fillStyle = 'rgba(10,16,48,0.42)';
-    ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
-  }
+  // 夜色: 整体压暗, 但由技能光源/随身微光挖出光孔, 被照到的地面与实体恢复原亮度
+  if (phase === 'night') drawNightLighting();
 
   // 触屏摇杆 (仅移动端显示)
   if (IS_TOUCH && touch.active) {
@@ -3793,7 +3861,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108105745 -->
-<script>window.__BUILD='20261108105745';</script>
+
+<!-- build:20261108111208 -->
+<script>window.__BUILD='20261108111208';</script>
 </body>
 </html>
