@@ -188,6 +188,17 @@
   .teamrow .tmeta { display: block; color: #8899aa; font-size: 10px; margin-top: 2px; }
   .teamrow button { min-width: 60px; }
   .teamrow button:disabled { opacity: 0.5; cursor: default; }
+  .catpanel { width: 540px; max-height: 82vh; overflow-y: auto; }
+  .catsec { margin-top: 8px; }
+  .catsec-t { color: #9fe07a; font-size: 12px; margin: 4px 0 2px; }
+  .catrow {
+    display: grid; grid-template-columns: 1fr 34px 34px 56px;
+    gap: 6px; align-items: center; padding: 2px 0;
+  }
+  .catrow button { padding: 2px 0; }
+  .catrow button:disabled { opacity: 0.35; cursor: default; }
+  .catrow .caton { color: #9fe07a; }
+  .catrow .catoff { color: #8899aa; }
 </style>
 </head>
 <body>
@@ -203,14 +214,15 @@
 </div>
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
-<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · 左键点角色切换 · T 队伍管理 · Esc 暂停</div>
+<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · 左键点角色切换 · T 队伍管理 · C 猫 · Esc 暂停</div>
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
   <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2 / 玉米 2 / 南瓜 0</span></div>
   <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0 / 玉米 0 / 南瓜 0</span></div>
+  <div id="plothint">地块: 9 块 · 下一块 50 金 (B 购买)</div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
-  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -241,6 +253,7 @@
   <div class="panel">
     <div class="ptitle">种子商店</div>
     <div class="coinline">金币: <span id="shopcoins">100</span> · 行情每日浮动</div>
+    <div class="shoprow"><span>地块</span><button id="buyplot">买地</button><span id="plotcount">共 9 块</span><span class="trend flat">扩张</span><span id="plotnext">下一块 50 金</span></div>
     <div class="shoprow head"><span>作物</span><span>买种子</span><span>持有</span><span>行情</span><span>卖出</span></div>
     <div id="shoprows"></div>
     <div id="shopmsg" class="msg"></div>
@@ -273,6 +286,15 @@
     <div id="teamlist"></div>
     <div class="msg" id="teammsg">选择要扮演的角色，或让伙伴留在家园守卫；面板打开时游戏暂停。</div>
     <button id="teamclose" class="close">关闭（T / Esc）</button>
+  </div>
+</div>
+<div id="cat" class="overlay">
+  <div class="panel catpanel">
+    <div class="ptitle">猫 · 自动农场</div>
+    <div class="coinline">猫粮: <span id="catfood">2</span> · 下次行动: <span id="catnext">-</span> <button id="catfeed">喂 1 份猫粮</button></div>
+    <div id="catcfg"></div>
+    <div class="msg" id="catmsg"></div>
+    <button id="catclose" class="close">关闭（C / Esc）</button>
   </div>
 </div>
 
@@ -474,6 +496,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'escape') {
     if (gameState === 'homemove') { cancelHomeMove(); return; }
     if (teamOpen) { closeTeam(); return; }
+    if (catOpen) { closeCat(); return; }
     if (shopOpen) { closeShop(); return; }
     togglePause();
     return;
@@ -481,6 +504,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'h') { openHomeMove(); return; }   // 在此安家: 就地确认后家园与地块整体迁移
   if (k === 'b') { if (gameState === 'playing' || shopOpen) toggleShop(); return; }
   if (k === 't') { if (gameState === 'playing' || teamOpen) toggleTeam(); return; }   // 队伍管理面板(打开时暂停)
+  if (k === 'c') { if (gameState === 'playing' || catOpen) toggleCat(); return; }   // 猫的自动农场设置
   if (k === 'enter') {
     if (gameState === 'homemove') { confirmHomeMove(); return; }
     closeSettlement();
@@ -554,11 +578,29 @@ function trySwitchByClick(p) {
   }
   if (hit) setControlled(hit);
 }
+// 短按左键点在猫身上 -> 打开自动农场设置 (猫不可被扮演, 不进 getActors)
+function tryClickNpc(p) {
+  if (gameState !== 'playing') return false;
+  const cp = catPos();
+  const sx = cp.x - camX, sy = cp.y - camY;
+  if (Math.abs(p.x - sx) <= 16 && p.y >= sy - 34 && p.y <= sy + 6) {
+    openCat();
+    return true;
+  }
+  return false;
+}
 // 右键点地目标限制在可行走范围, 避免角色永远卡在边界
 function clampToWorld(x, y) {
   return {
     x: Math.max(20, Math.min(WORLD_W - 20, x)),
     y: Math.max(30, Math.min(WORLD_H - 10, y)),
+  };
+}
+// 世界实体统一边界: 敌人/宝石/宝箱/宠物等生成与漂移都收进同一可玩区, 避免各写一套
+function clampEntityToWorld(x, y) {
+  return {
+    x: Math.max(24, Math.min(WORLD_W - 24, x)),
+    y: Math.max(34, Math.min(WORLD_H - 14, y)),
   };
 }
 
@@ -621,8 +663,11 @@ canvas.addEventListener('pointerup', (e) => {
     leftHeld = false; leftPid = null;
     // 松开左键: 若键盘还按着就交回键盘, 否则停住
     if (inputMode === 'left') inputMode = hasMoveKey() ? 'keys' : 'none';
-    // 短按左键(未触发长按跟随): 点在角色身上即切换控制
-    if (e.button === 0 && held < LEFT_HOLD_MS) trySwitchByClick(toLogic(e));
+    // 短按左键(未触发长按跟随): 先判断是否点在猫身上, 再判断是否点在角色身上
+    if (e.button === 0 && held < LEFT_HOLD_MS) {
+      const p = toLogic(e);
+      if (!tryClickNpc(p)) trySwitchByClick(p);
+    }
   }
 });
 canvas.addEventListener('pointercancel', (e) => {
@@ -793,15 +838,24 @@ function togglePause() {
 
 
 // ===== 农场 =====
-const FARM_COLS = 3, FARM_ROWS = 3, FARM_CELL = 34, FARM_GAP = 2;
+// 网格可增长: 列数固定 3, 行数随地块数量增长; 初始 3x3 = 9 块, 购买后向下扩展一行
+const FARM_COLS = 3, FARM_CELL = 34, FARM_GAP = 2;
 const FARM_W = FARM_COLS * FARM_CELL + (FARM_COLS - 1) * FARM_GAP;
-const FARM_H = FARM_ROWS * FARM_CELL + (FARM_ROWS - 1) * FARM_GAP;
+const BASE_FARM_ROWS = 3;
+const BASE_FARM_PLOTS = FARM_COLS * BASE_FARM_ROWS;
+// 指定地块数对应的农场高度 (行数按列数向上取整)
+function farmHFor(n) {
+  const rows = Math.max(BASE_FARM_ROWS, Math.ceil(n / FARM_COLS));
+  return rows * FARM_CELL + (rows - 1) * FARM_GAP;
+}
+function farmH() { return farmHFor(plots.length); }
 // 家园: 唯一权威位置是左上角(0 号地块左上角)的世界坐标 home,
 // 地块坐标与家园中心都由它派生, 不再保留 FARM_X0/HOME_X 之类的平行常量.
 const DEFAULT_HOME = { x: Math.round(WORLD_W / 2 - FARM_W / 2), y: WORLD_H / 2 + 52 };
-const HOME_MAX_X = WORLD_W - FARM_W, HOME_MAX_Y = WORLD_H - FARM_H;
+const HOME_MAX_X = WORLD_W - FARM_W;
+function homeMaxY() { return WORLD_H - farmH(); }
 let home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
-function homeCenter() { return { x: home.x + FARM_W / 2, y: home.y + FARM_H / 2 }; }
+function homeCenter() { return { x: home.x + FARM_W / 2, y: home.y + farmH() / 2 }; }
 const HOME_MOVE_MIN = 120;                 // 安家最小距离: 太近不允许, 防止原地反复搬迁
 let pendingHomeMove = null;                // 待确认的安家目标 {x,y,dist,dir}
 const FOLLOW_FAR = 96, FOLLOW_NEAR = 34;   // 跟随舒适距离: 超过远值才追, 小于近值退开
@@ -833,7 +887,7 @@ let selectedCrop = 0;
 let farmTime = 0;
 
 function newPlots() {
-  return Array.from({ length: FARM_COLS * FARM_ROWS }, () => ({ state: 'empty', crop: 0, start: 0 }));
+  return Array.from({ length: BASE_FARM_PLOTS }, () => ({ state: 'empty', crop: 0, start: 0 }));
 }
 let plots = newPlots();
 
@@ -869,6 +923,30 @@ function afterTrade() {
   updateFarmHud();
   renderShop();
   saveGame();
+}
+
+// 扩张成本随已有地块数递增; 每买一块向下补一个格位, 行满后自动开新行
+function nextPlotCost() {
+  return Math.round(50 * Math.pow(1.5, plots.length - BASE_FARM_PLOTS));
+}
+
+function buyPlot() {
+  const cost = nextPlotCost();
+  if (coins < cost) {
+    shopMsg('金币不足：还差 ' + (cost - coins) + ' 金', true);
+    return;
+  }
+  const needH = farmHFor(plots.length + 1);
+  if (home.y + needH > WORLD_H - 10) {
+    shopMsg('家园下方没有空间：先按 H 把家园往上方搬，再继续扩张', true);
+    return;
+  }
+  coins -= cost;
+  plots.push({ state: 'empty', crop: 0, start: 0 });
+  afterTrade();
+  shopMsg('已解锁第 ' + plots.length + ' 块地，花费 ' + cost + ' 金', false);
+  const hc = homeCenter();
+  popText(hc.x, hc.y + farmH() / 2 - 20, '新地块 +1', '#ffd166', 11);
 }
 
 function buySeed(i) {
@@ -930,6 +1008,7 @@ document.getElementById('shoprows').addEventListener('click', (e) => {
   else if (b.dataset.sellall !== undefined) sellProduce(Number(b.dataset.sellall), true);
 });
 document.getElementById('shopclose').addEventListener('click', closeShop);
+document.getElementById('buyplot').addEventListener('click', buyPlot);
 document.getElementById('settleok').addEventListener('click', closeSettlement);
 document.getElementById('homebtn').addEventListener('click', openHomeMove);
 document.getElementById('hm_ok').addEventListener('click', confirmHomeMove);
@@ -1087,7 +1166,242 @@ function updateFarmHud() {
   $('seedname').textContent = CROPS.map((c, i) => c.name + ' ' + seeds[i]).join(' / ');
   $('produce').textContent = CROPS.map((c, i) => c.name + ' ' + produce[i]).join(' / ');
   $('nkills').textContent = nightKills;
+  const cost = nextPlotCost();
+  $('plothint').textContent = '地块: ' + plots.length + ' 块 · 下一块 ' + cost + ' 金 (B 购买)';
+  if ($('buyplot')) {
+    $('buyplot').textContent = '买地 ' + cost + '金';
+    $('buyplot').disabled = coins < cost;
+    $('plotcount').textContent = '共 ' + plots.length + ' 块';
+    $('plotnext').textContent = '下一块 ' + cost + ' 金';
+  }
 }
+
+// ===== 猫 · 自动农场 =====
+// 猫是自动化抽象: 不参战/不可被攻击/不可被扮演, 不走进地块也不做逐块动画,
+// 只按调度器定时批量执行「收获成熟 -> 补种空缺 -> 按优先级买种 -> 按优先级卖库存」.
+const CAT_BASE_TICK = 12;     // 基础行动间隔(秒)
+const CAT_FAST_TICK = 6;      // 喂猫粮后的间隔
+const CAT_FEED_SEC = 60;      // 一份猫粮的加速时长
+const CAT_RESERVE = 20;       // 自动买种后至少保留的金币
+const CAT_SECTIONS = [
+  { id: 'plant',   name: '种植优先级' },
+  { id: 'harvest', name: '收获优先级' },
+  { id: 'buy',     name: '种子购买优先级' },
+  { id: 'sell',    name: '果蔬卖出优先级' },
+];
+let catFood = 2;              // 猫粮库存 (商城/挖宝产出, 本批先给初始 2 份)
+let catFeedT = 0;             // 猫粮加速剩余秒数
+let catTickT = CAT_BASE_TICK; // 距下次自动行动
+let catOpen = false;
+
+function makeCatCfg() {
+  const cfg = {};
+  for (const s of CAT_SECTIONS) {
+    cfg[s.id] = { on: CROPS.map(() => true), order: CROPS.map((_, i) => i) };
+  }
+  // 默认优先级: 值钱/生长慢的排前面; 买种按便宜的先补
+  cfg.plant.order = [4, 2, 1, 3, 0];
+  cfg.harvest.order = [4, 2, 1, 3, 0];
+  cfg.buy.order = [0, 3, 1, 2, 4];
+  cfg.sell.order = [4, 2, 1, 3, 0];
+  return cfg;
+}
+let catCfg = makeCatCfg();
+
+function catPos() {
+  // 猫窝固定在家园左侧, 随家园整体迁移, 不跟随玩家跑图
+  return clampEntityToWorld(home.x - 24, home.y + farmH() - 6);
+}
+
+function sanitizeCatCfg(raw) {
+  const cfg = makeCatCfg();
+  if (!raw || typeof raw !== 'object') return cfg;
+  for (const s of CAT_SECTIONS) {
+    const r = raw[s.id];
+    if (!r || typeof r !== 'object') continue;
+    if (Array.isArray(r.order) && r.order.length === CROPS.length) {
+      const nums = r.order.map((x) => Math.floor(x));
+      if (nums.every((x, i) => x >= 0 && x < CROPS.length && nums.indexOf(x) === i)) cfg[s.id].order = nums;
+    }
+    if (Array.isArray(r.on) && r.on.length === CROPS.length) cfg[s.id].on = r.on.map(Boolean);
+  }
+  return cfg;
+}
+
+function catMsg(text, isErr) {
+  const el = $('catmsg');
+  el.textContent = text;
+  el.className = 'msg' + (isErr ? '' : ' ok');
+}
+
+function catTickLabel() {
+  const base = catFeedT > 0 ? CAT_FAST_TICK : CAT_BASE_TICK;
+  return Math.ceil(Math.max(0, catTickT)) + 's（' + base + 's/次' + (catFeedT > 0 ? ' · 加速中 ' + Math.ceil(catFeedT) + 's' : '') + '）';
+}
+
+function renderCat() {
+  $('catfood').textContent = catFood;
+  $('catnext').textContent = catTickLabel();
+  $('catfeed').disabled = catFood <= 0;
+  const box = $('catcfg');
+  box.innerHTML = '';
+  for (const s of CAT_SECTIONS) {
+    const sec = document.createElement('div');
+    sec.className = 'catsec';
+    const h = document.createElement('div');
+    h.className = 'catsec-t';
+    h.textContent = s.name;
+    sec.appendChild(h);
+    catCfg[s.id].order.forEach((ci, idx) => {
+      const row = document.createElement('div');
+      row.className = 'catrow';
+      const nm = document.createElement('span');
+      nm.textContent = (idx + 1) + '. ' + CROPS[ci].name;
+      const up = document.createElement('button');
+      up.textContent = '↑';
+      up.disabled = idx === 0;
+      up.dataset.sec = s.id; up.dataset.crop = ci; up.dataset.act = 'up';
+      const down = document.createElement('button');
+      down.textContent = '↓';
+      down.disabled = idx === catCfg[s.id].order.length - 1;
+      down.dataset.sec = s.id; down.dataset.crop = ci; down.dataset.act = 'down';
+      const tog = document.createElement('button');
+      const on = catCfg[s.id].on[ci];
+      tog.textContent = on ? '已开启' : '已关闭';
+      tog.className = on ? 'caton' : 'catoff';
+      tog.dataset.sec = s.id; tog.dataset.crop = ci; tog.dataset.act = 'toggle';
+      row.appendChild(nm); row.appendChild(up); row.appendChild(down); row.appendChild(tog);
+      sec.appendChild(row);
+    });
+    box.appendChild(sec);
+  }
+}
+
+function moveCatItem(sec, crop, dir) {
+  const arr = catCfg[sec].order;
+  const i = arr.indexOf(crop);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  renderCat();
+  saveDirty = true;
+}
+
+function toggleCatItem(sec, crop) {
+  const on = catCfg[sec].on;
+  on[crop] = !on[crop];
+  renderCat();
+  saveDirty = true;
+}
+
+function feedCat() {
+  if (catFood <= 0) {
+    catMsg('没有猫粮了：商城与挖宝可获得猫粮', true);
+    return;
+  }
+  catFood--;
+  catFeedT = Math.min(CAT_FEED_SEC * 2, catFeedT + CAT_FEED_SEC);
+  catMsg('喂了 1 份猫粮，接下来 ' + CAT_FEED_SEC + ' 秒加速工作', false);
+  renderCat();
+  saveDirty = true;
+}
+
+function openCat() {
+  if (gameState !== 'playing' || !player) return;
+  catOpen = true;
+  gameState = 'cat';
+  resetInput();
+  catMsg('', false);
+  renderCat();
+  $('cat').style.display = 'flex';
+}
+
+function closeCat() {
+  if (!catOpen) return;
+  catOpen = false;
+  $('cat').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+  lastT = performance.now();
+}
+
+function toggleCat() {
+  if (catOpen) closeCat();
+  else openCat();
+}
+
+// 调度器单次执行: 全部批量处理, 不逐块播动画; 猫收菜不给经验, 只产出作物
+function catTick() {
+  let harvested = 0, planted = 0, bought = 0, sold = 0, earned = 0;
+  // 1. 收获成熟 (按收获优先级; 关掉的品类不自动收)
+  for (const ci of catCfg.harvest.order) {
+    if (!catCfg.harvest.on[ci]) continue;
+    for (const p of plots) {
+      if (p.state === 'ready' && p.crop === ci) {
+        p.state = 'empty';
+        produce[ci]++;
+        harvested++;
+      }
+    }
+  }
+  // 2. 补种空缺 (按种植优先级, 只种背包里已有的种子)
+  for (const p of plots) {
+    if (p.state !== 'empty') continue;
+    for (const ci of catCfg.plant.order) {
+      if (!catCfg.plant.on[ci] || seeds[ci] <= 0) continue;
+      seeds[ci]--;
+      p.state = 'growing';
+      p.crop = ci;
+      p.start = farmTime;
+      planted++;
+      break;
+    }
+  }
+  // 3. 按优先级补种子 (每种补到 2, 并给金币留底)
+  for (const ci of catCfg.buy.order) {
+    if (!catCfg.buy.on[ci]) continue;
+    while (seeds[ci] < 2 && coins - CROPS[ci].cost >= CAT_RESERVE) {
+      coins -= CROPS[ci].cost;
+      seeds[ci]++;
+      bought++;
+    }
+  }
+  // 4. 按优先级卖出库存
+  for (const ci of catCfg.sell.order) {
+    if (!catCfg.sell.on[ci] || produce[ci] <= 0) continue;
+    const price = sellPrice(ci);
+    earned += price * produce[ci];
+    sold += produce[ci];
+    coins += price * produce[ci];
+    produce[ci] = 0;
+  }
+  if (harvested || planted || bought || sold) {
+    updateFarmHud();
+    saveDirty = true;
+    const cp = catPos();
+    const bits = [];
+    if (harvested) bits.push('收' + harvested);
+    if (planted) bits.push('种' + planted);
+    if (bought) bits.push('买种' + bought);
+    if (sold) bits.push('卖' + sold + ' +' + earned + '金');
+    popText(cp.x, cp.y - 34, '猫: ' + bits.join(' '), '#9fe07a', 10);
+    if (catOpen) renderCat();
+  }
+}
+
+document.getElementById('catfeed').addEventListener('click', feedCat);
+document.getElementById('catclose').addEventListener('click', closeCat);
+document.getElementById('catcfg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const sec = b.dataset.sec;
+  if (!sec || !catCfg[sec]) return;
+  const crop = Number(b.dataset.crop);
+  if (b.dataset.act === 'up') moveCatItem(sec, crop, -1);
+  else if (b.dataset.act === 'down') moveCatItem(sec, crop, 1);
+  else if (b.dataset.act === 'toggle') toggleCatItem(sec, crop);
+});
+
 
 // ===== 安家 (定居点式: 玩家就地确认, 家园与地块整体迁移) =====
 // 方向文案: 以当前家园中心为原点, 目标在哪个八方向
@@ -1101,11 +1415,11 @@ function openHomeMove() {
   if (gameState !== 'playing') return;
   const me = activeChar || player;
   if (!me) return;
-  // 新家园左上角: 以玩家当前位置为新家园中心, 再裁剪保证 9 块地完整落在世界内
+  // 新家园左上角: 以玩家当前位置为新家园中心, 再裁剪保证整块农场完整落在世界内
   const nx = Math.max(0, Math.min(HOME_MAX_X, Math.round(me.x - FARM_W / 2)));
-  const ny = Math.max(0, Math.min(HOME_MAX_Y, Math.round(me.y - FARM_H / 2)));
+  const ny = Math.max(0, Math.min(homeMaxY(), Math.round(me.y - farmH() / 2)));
   const hc = homeCenter();
-  const target = { x: nx + FARM_W / 2, y: ny + FARM_H / 2 };
+  const target = { x: nx + FARM_W / 2, y: ny + farmH() / 2 };
   const dx = target.x - hc.x, dy = target.y - hc.y;
   const dist = Math.hypot(dx, dy);
   if (dist < HOME_MOVE_MIN) {
@@ -1144,11 +1458,13 @@ function confirmHomeMove() {
   saveGame();   // 迁移后立即写档
 }
 
-// ===== 存档 v3 (localStorage, 兼容 v1/v2 旧档) =====
+// ===== 存档 v4 (localStorage, 兼容 v1/v2/v3 旧档) =====
+// v4: 地块数量可增长 (不再固定 9 块); 旧档迁移前按版本备份原文.
 // 清档方式: 浏览器控制台执行 localStorage.removeItem('pixel-farm-save-v1') 后刷新
 const SAVE_KEY = 'pixel-farm-save-v1';
 const SAVE_BACKUP_KEY = 'pixel-farm-save-backup-v2';   // v1/v2 首次迁移前的原文备份
-const SAVE_VERSION = 3;
+const SAVE_BACKUP_V3_KEY = 'pixel-farm-save-backup-v3'; // v3 -> v4 首次迁移前的原文备份
+const SAVE_VERSION = 4;
 const PLAYER_STAT_KEYS = ['maxHp', 'hp', 'speed', 'dmg', 'atkSpeed', 'projSpeed', 'projCount', 'pierce', 'critChance', 'critMul', 'knives', 'boomerang', 'laser'];
 let pendingStats = null;
 let pendingPartnerStats = null;   // 读档时伙伴属性
@@ -1189,6 +1505,8 @@ function saveGame() {
       dayNumber,
       seeds: seeds.slice(),
       produce: produce.slice(),
+      // 猫: 猫粮库存 + 四组优先级设置 + 加速剩余时长 (可选字段, 旧档缺省按默认)
+      cat: { food: catFood, cfg: catCfg, feedT: catFeedT },
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
       // v3: 家园左上角世界坐标, 地块仍只存相对索引, 位置由它派生
       home: { x: home.x, y: home.y },
@@ -1208,10 +1526,11 @@ function saveGame() {
 }
 
 // 旧档首次迁移前备份原文: 已有备份就跳过, 保证只写一次且不被后续启动覆盖
-function backupLegacySave(raw) {
+function backupLegacySave(raw, ver) {
   try {
-    if (localStorage.getItem(SAVE_BACKUP_KEY)) return;
-    localStorage.setItem(SAVE_BACKUP_KEY, raw);
+    const key = ver >= 3 ? SAVE_BACKUP_V3_KEY : SAVE_BACKUP_KEY;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, raw);
   } catch (e) {
     console.warn('旧档备份失败', e);
   }
@@ -1232,26 +1551,29 @@ function loadGame() {
     const s = JSON.parse(raw);
     if (!s) return failLoad('存档内容为空');
     const ver = s.version;
-    if (ver !== 1 && ver !== 2 && ver !== 3) return failLoad('未知存档版本 ' + ver);
-    // 旧档迁移前先备份原文, 备份成功后才可能写 v3
-    if (ver !== 3) backupLegacySave(raw);
+    if (ver !== 1 && ver !== 2 && ver !== 3 && ver !== 4) return failLoad('未知存档版本 ' + ver);
+    // 旧档迁移前先备份原文, 备份成功后才可能写 v4
+    if (ver !== SAVE_VERSION) backupLegacySave(raw, ver);
     for (const k of ['coins', 'level', 'xp', 'xpNext', 'selectedCrop', 'farmTime']) {
       if (!isNum(s[k])) return failLoad('缺少字段 ' + k);
     }
-    if (!Array.isArray(s.plots) || s.plots.length !== FARM_COLS * FARM_ROWS) return failLoad('地块数据不完整');
+    // v1-v3 固定 9 块; v4 起数量可变 (至少 9, 上限防止异常存档撑爆内存)
+    if (!Array.isArray(s.plots)) return failLoad('地块数据不完整');
+    if (ver < 4 && s.plots.length !== BASE_FARM_PLOTS) return failLoad('旧版地块数量不正确');
+    if (s.plots.length < BASE_FARM_PLOTS || s.plots.length > 200) return failLoad('地块数量非法');
     const loadedPlots = s.plots.map((p) => {
       if (!p || !['empty', 'growing', 'ready'].includes(p.state)) throw new Error('bad plot state');
       const crop = Math.floor(p.crop);
       if (crop < 0 || crop >= CROPS.length || !isNum(p.start)) throw new Error('bad plot crop');
       return { state: p.state, crop, start: p.start };
     });
-    // 家园位置: v3 必填且必须为有限数值, 越界只裁剪(位置可恢复, 不判损坏);
+    // 家园位置: v3/v4 必填且必须为有限数值, 越界只裁剪(位置可恢复, 不判损坏);
     // v1/v2 回填默认值, 与旧版 FARM_X0/FARM_Y0 逐像素一致 -> 旧档平移零偏差
-    if (ver === 3) {
+    if (ver >= 3) {
       if (!s.home || !isNum(s.home.x) || !isNum(s.home.y)) return failLoad('家园位置缺失或非法');
       home = {
         x: Math.min(HOME_MAX_X, Math.max(0, Math.floor(s.home.x))),
-        y: Math.min(HOME_MAX_Y, Math.max(0, Math.floor(s.home.y))),
+        y: Math.min(WORLD_H - farmHFor(loadedPlots.length), Math.max(0, Math.floor(s.home.y))),
       };
     } else {
       home = { x: DEFAULT_HOME.x, y: DEFAULT_HOME.y };
@@ -1285,16 +1607,21 @@ function loadGame() {
     };
     seeds = readInv(s.seeds) || START_SEEDS.slice();
     produce = readInv(s.produce) || new Array(CROPS.length).fill(0);
+    // 猫设置为后加的可选字段: 旧档缺省给初始猫粮与默认优先级, 不判损坏
+    catFood = (s.cat && isNum(s.cat.food)) ? Math.max(0, Math.floor(s.cat.food)) : 2;
+    catFeedT = (s.cat && isNum(s.cat.feedT)) ? Math.max(0, Math.min(CAT_FEED_SEC * 2, s.cat.feedT)) : 0;
+    catCfg = sanitizeCatCfg(s.cat && s.cat.cfg);
+    catTickT = CAT_BASE_TICK;
     plots = loadedPlots;
     pendingStats = Object.keys(pStats).length ? pStats : null;
     pendingPartnerStats = Object.keys(paStats).length ? paStats : null;
     pendingPlayerChar = (chars.player && typeof chars.player.char === 'string') ? chars.player.char : null;
     pendingPartnerChar = (chars.partner && typeof chars.partner.char === 'string') ? chars.partner.char : null;
     pendingActiveRole = (s.activeRole === 'partner') ? 'partner' : null;
-    // 迁移立即落盘 v3: 只在持有写锁的标签页写, 避免与其它标签页互相覆盖
-    if (ver !== 3 && isActiveTab) {
+    // 迁移立即落盘 v4: 只在持有写锁的标签页写, 避免与其它标签页互相覆盖
+    if (ver !== SAVE_VERSION && isActiveTab) {
       try {
-        s.version = 3;
+        s.version = SAVE_VERSION;
         s.home = { x: home.x, y: home.y };
         localStorage.setItem(SAVE_KEY, JSON.stringify(s));
       } catch (e) {
@@ -1788,16 +2115,32 @@ function pickType() {
   return ENEMY_TYPES[Math.floor(Math.random() * (maxI + 1))];
 }
 
+// 环绕受控角色的生成点: 距离 dMin-dMax, 裁剪进可玩区;
+// 越界时按 45° 扇区轮转重试, 保证裁剪后不会贴脸、也不会多个实体挤在地图同一侧.
+function spawnPointAround(lead, dMin, dMax, minFromLead) {
+  const baseA = Math.random() * Math.PI * 2;
+  for (let i = 0; i < 8; i++) {
+    const a = baseA + i * Math.PI / 4;
+    const d = dMin + Math.random() * (dMax - dMin);
+    const c = clampEntityToWorld(lead.x + Math.cos(a) * d, lead.y + Math.sin(a) * d);
+    if (Math.hypot(c.x - lead.x, c.y - lead.y) >= minFromLead) return c;
+  }
+  // 玩家被逼到角落时的兜底: 往地图内侧最远处放
+  return clampEntityToWorld(
+    lead.x < WORLD_W / 2 ? lead.x + dMax : lead.x - dMax,
+    lead.y < WORLD_H / 2 ? lead.y + dMax * 0.75 : lead.y - dMax * 0.75
+  );
+}
+
 function spawnEnemy() {
-  const a = Math.random() * Math.PI * 2;
-  const d = 360 + Math.random() * 80;
   const t = pickType();
   const mul = 1 + 0.10 * (dayNumber - 1);
   const hp = Math.round(t.hp * mul);
   const lead = activeChar || player;
+  const p = spawnPointAround(lead, 360, 440, 180);
   enemies.push({
-    x: lead.x + Math.cos(a) * d,
-    y: lead.y + Math.sin(a) * d,
+    x: p.x,
+    y: p.y,
     hp, maxHp: hp,
     speed: t.speed, size: t.size,
     dmg: t.dmg, xp: t.xp, color: t.color,
@@ -1824,12 +2167,12 @@ function spawnMini(x, y, color) {
 // ===== Boss (每夜一只, 高血大体积, 环绕弹幕+蓄力冲刺, 掉稀有增益) =====
 let bossT = RHYTHM.bossNightDelay;   // 距下一只 boss 的秒数
 function spawnBoss() {
-  const a = Math.random() * Math.PI * 2;
   const hp = Math.round(150 + 70 * (dayNumber - 1));   // 血量按天数成长
   const lead = activeChar || player;
+  const p = spawnPointAround(lead, 400, 400, 220);
   enemies.push({
-    x: lead.x + Math.cos(a) * 400,
-    y: lead.y + Math.sin(a) * 400,
+    x: p.x,
+    y: p.y,
     hp, maxHp: hp,
     speed: 24, size: 20, dmg: 25, xp: 30,
     color: '#ff3355', kind: 'boss',
@@ -1998,11 +2341,10 @@ function updateWeapons(dt) {
 // ===== 经验宝石 (敌人死亡掉落, 靠近吸附, 拾取攒经验) =====
 const GEM_MAGNET_R = 90;   // 吸附半径
 const GEM_PICK_R = 10;     // 拾取半径
-const GEM_BOUND = 24;      // 宝石可拾取范围: 贴边目标会让伙伴顶墙, 统一收进世界内
-const GEM_TOP = 34;
 function clampGem(g) {
-  g.x = Math.max(GEM_BOUND, Math.min(WORLD_W - GEM_BOUND, g.x));
-  g.y = Math.max(GEM_TOP, Math.min(WORLD_H - 14, g.y));
+  const c = clampEntityToWorld(g.x, g.y);   // 贴边目标会让伙伴顶墙, 统一收进世界内
+  g.x = c.x;
+  g.y = c.y;
   return g;
 }
 const GEM_MAX = 150;       // 场上宝石上限, 超过则回收最老的
@@ -2188,12 +2530,17 @@ function reset(preserveProgress = false) {
     dayNumber = 1;
     seeds = START_SEEDS.slice();
     produce = new Array(CROPS.length).fill(0);
+    catFood = 2;
   }
   shopOpen = false;
   $('shop').style.display = 'none';
   $('settle').style.display = 'none';
   teamOpen = false;
   $('team').style.display = 'none';
+  catOpen = false;
+  $('cat').style.display = 'none';
+  catFeedT = 0;
+  catTickT = CAT_BASE_TICK;
   spawnTimer = 0;
   deadTimer = 0;
   bossT = RHYTHM.bossNightDelay;
@@ -2369,7 +2716,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team') {
+    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'cat') {
       render();
       return;
     }
@@ -2396,6 +2743,13 @@ function loop(t) {
 
     gameTime += dt;
     updateFarm(dt);
+    // 猫的自动农场调度: 定时批量执行; 喂猫粮只缩短间隔, 不额外增加工作量
+    if (catFeedT > 0) catFeedT -= dt;
+    catTickT -= dt;
+    if (catTickT <= 0) {
+      catTickT = catFeedT > 0 ? CAT_FAST_TICK : CAT_BASE_TICK;
+      catTick();
+    }
     saveTimer += dt;
     if (saveTimer >= 3) {
       saveTimer = 0;
@@ -2603,6 +2957,38 @@ function loop(t) {
   }
 }
 
+// 猫: 待在家园的自动农场 NPC, 不参战/不跟随/不可扮演
+function drawCat() {
+  const cp = catPos();
+  const sx = Math.round(cp.x - camX), sy = Math.round(cp.y - camY);
+  if (sx < -40 || sx > LOGIC_W + 40 || sy < -40 || sy > LOGIC_H + 40) return;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 1, 7, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const tex = charTextures['cat'];
+  let top = 14;
+  if (tex && tex.down && tex.down.idle && tex.down.idle.length) {
+    const arr = tex.down.idle;
+    const img = arr[Math.floor(gameTime * 4) % arr.length];
+    ctx.drawImage(img, sx - Math.floor(tex.frameW / 2), sy - tex.frameH);
+    top = tex.frameH;
+  } else {
+    // 素材缺失时的兜底简笔猫
+    ctx.fillStyle = '#f2c9a0';
+    ctx.fillRect(sx - 5, sy - 10, 10, 8);
+    ctx.fillRect(sx - 3, sy - 14, 3, 4);
+    ctx.fillRect(sx + 1, sy - 14, 3, 4);
+    ctx.fillStyle = '#c98a5a';
+    ctx.fillRect(sx - 2, sy - 8, 2, 2);
+    ctx.fillRect(sx + 1, sy - 8, 2, 2);
+  }
+  ctx.textAlign = 'center';
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = catFeedT > 0 ? '#ffd166' : '#cfd8b8';
+  ctx.fillText(catFeedT > 0 ? '猫 · 加速中 (C)' : '猫 · 自动农场 (C)', sx, sy - top - 3);
+}
+
 function render() {
   ctx.save();
   // 屏幕震动: 幅度随时长衰减
@@ -2630,6 +3016,8 @@ function render() {
 
   // 农场地块与作物
   drawFarm();
+  // 猫 NPC (在家园旁)
+  drawCat();
 
   // 敌人
   for (const e of enemies) {
@@ -3032,7 +3420,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108003223 -->
-<script>window.__BUILD='20261108003223';</script>
+
+<!-- build:20261108102042 -->
+<script>window.__BUILD='20261108102042';</script>
 </body>
 </html>
