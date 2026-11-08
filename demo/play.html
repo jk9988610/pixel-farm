@@ -213,6 +213,52 @@
   .chatlog .cline.you { color: #7df9ff; }
   .chatlog .cline.sys { color: #8899aa; }
   .chatopts { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* 昆特牌: 简化三局两胜 */
+  .gwentpanel { width: 600px; max-height: 90vh; overflow-y: auto; }
+  .gwentrounds { display: flex; gap: 5px; justify-content: center; margin: 2px 0 6px; }
+  .gwentrounds span {
+    display: inline-block; min-width: 26px; text-align: center;
+    border: 1px solid #2c3a4c; border-radius: 3px; padding: 1px 4px;
+    font-size: 10px; color: #8899aa;
+  }
+  .gwentrounds span.on { border-color: #7df9ff; color: #7df9ff; }
+  .gwentrounds span.win { border-color: #9fe07a; color: #9fe07a; }
+  .gwentrounds span.lose { border-color: #ff8f6b; color: #ff8f6b; }
+  .gwentrounds span.tie { border-color: #ffd166; color: #ffd166; }
+  .gwentside {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 3px 0; color: #dfe8c8; font-size: 11px;
+  }
+  .gwentside.npc { justify-content: flex-end; }
+  .gwentside .gname { color: #8899aa; }
+  .gwentside .gpower { color: #ffd166; font-size: 17px; font-weight: bold; }
+  .gwentside .gmeta { color: #8899aa; font-size: 10px; }
+  .gwentplayed { display: flex; flex-wrap: wrap; gap: 3px; min-height: 20px; margin: 2px 0; }
+  .gwentplayed.npc { justify-content: flex-end; }
+  .gwentplayed .gc {
+    background: #0f1720; border: 1px solid #2c3a4c; border-radius: 3px;
+    padding: 1px 5px; font-size: 10px; color: #c9d4c0;
+  }
+  .gwentmid { text-align: center; color: #8899aa; font-size: 10px; padding: 3px 0; }
+  .gwentmid b { color: #7df9ff; font-weight: normal; }
+  .gwenthand { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; min-height: 44px; }
+  .gwenthand button { padding: 4px 7px; text-align: left; min-width: 56px; }
+  .gwenthand button .gp { display: block; color: #ffd166; font-size: 14px; font-weight: bold; }
+  .gwenthand button .gn { display: block; font-size: 10px; color: #dfe8c8; }
+  .gwenthand button:disabled { opacity: 0.4; cursor: default; }
+  .gwenthand .gmeta { color: #8899aa; font-size: 10px; }
+  .gwentresult { text-align: center; font-size: 14px; margin: 6px 0; min-height: 18px; color: #ffd166; }
+  .gwentlog {
+    height: 78px; overflow-y: auto; background: #0f1720;
+    border: 1px solid #2c3a4c; padding: 5px 8px; margin-top: 6px;
+  }
+  .gwentlog .gl { font-size: 10px; line-height: 1.55; color: #8899aa; }
+  .gwentlog .gl.you { color: #7df9ff; }
+  .gwentlog .gl.npc { color: #9fe07a; }
+  .gwentlog .gl.warn { color: #ffd166; }
+  .gwentfoot { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+  .gwentfoot button { padding: 5px 14px; font-size: 12px; }
+  .gwentfoot button:disabled { opacity: 0.4; cursor: default; }
   .teamrow button { min-width: 60px; }
   .teamopt { grid-template-columns: 1fr auto auto !important; border-top: 0 !important; }
   .teamrow button:disabled { opacity: 0.5; cursor: default; }
@@ -413,9 +459,22 @@
       <button data-topic="work">问问今天的活</button>
       <button data-topic="heart">你的心事</button>
       <button data-topic="night">问问夜里</button>
+      <button data-topic="gwent">来局昆特牌</button>
       <button data-topic="bye">先走了</button>
     </div>
     <button id="chatclose" class="close">关闭（R / Esc）</button>
+  </div>
+</div>
+
+<div id="gwent" class="overlay">
+  <div class="panel gwentpanel">
+    <div class="ptitle" id="gwenthead">昆特牌</div>
+    <div id="gwentbody"></div>
+    <div class="gwentfoot">
+      <button id="gwentpass">过牌</button>
+      <button id="gwentrestart" style="display:none">再来一局</button>
+      <button id="gwentclose" class="close">离开（Esc）</button>
+    </div>
   </div>
 </div>
 
@@ -749,6 +808,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === 'escape') {
     if (gameState === 'fishing') { closeFishing(); return; }
+    if (gameState === 'gwent') { closeGwent(); return; }
     if (pondMode) { togglePondMode(); return; }
     if (gameState === 'homemove') { cancelHomeMove(); return; }
     if (teamOpen) { closeTeam(); return; }
@@ -2870,6 +2930,8 @@ function saveGame() {
       fishCaught,
       // 乐器卡组 / 系带视觉开关: 旧档缺省为空与显示
       music: { inst: { player: { ...inst.player }, partner: { ...inst.partner } }, ribbonShow },
+      // 昆特牌累计战绩: 旧档缺省全 0
+      gwent: { wins: gwentRecord.wins, losses: gwentRecord.losses, draws: gwentRecord.draws },
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     saveDirty = false;
@@ -3012,6 +3074,13 @@ function loadGame() {
       }
     }
     ribbonShow = (s.music && typeof s.music.ribbonShow === 'boolean') ? s.music.ribbonShow : true;
+    // 昆特牌战绩: 后加可选字段, 旧档归零
+    const gRec = (s.gwent && typeof s.gwent === 'object') ? s.gwent : {};
+    gwentRecord = {
+      wins: isNum(gRec.wins) ? Math.max(0, Math.floor(gRec.wins)) : 0,
+      losses: isNum(gRec.losses) ? Math.max(0, Math.floor(gRec.losses)) : 0,
+      draws: isNum(gRec.draws) ? Math.max(0, Math.floor(gRec.draws)) : 0,
+    };
     pendingStats = Object.keys(pStats).length ? pStats : null;
     pendingPartnerStats = Object.keys(paStats).length ? paStats : null;
     pendingPlayerChar = (chars.player && typeof chars.player.char === 'string') ? chars.player.char : null;
@@ -3402,8 +3471,293 @@ document.querySelector('.chatopts').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.topic === 'bye') closeChat();
+  else if (b.dataset.topic === 'gwent') startGwent();
   else chatTopic(b.dataset.topic);
 });
+
+// ===== 昆特牌: 聊天入口的简化三局两胜 =====
+// 双方各 10 张单位牌 (力量构成相同, 各自洗牌), 开局各抽 5 张, 之后每局再各抽 1 张。
+// 一局内轮流出牌或过牌, 双方都过牌后比点数; 先赢 2 局者胜, 三局打完点数相同记平局。
+const GWENT_POOL = [
+  { name: '磨坊主', pow: 8 },
+  { name: '守夜人', pow: 7 },
+  { name: '铁匠', pow: 7 },
+  { name: '渔夫', pow: 6 },
+  { name: '猎手', pow: 6 },
+  { name: '牧羊人', pow: 5 },
+  { name: '酒坊伙计', pow: 5 },
+  { name: '草叉手', pow: 4 },
+  { name: '稻草人', pow: 4 },
+  { name: '拾穗人', pow: 3 },
+];
+let gwentRecord = { wins: 0, losses: 0, draws: 0 };   // 累计战绩 (随存档)
+let gwentMatch = null;                                 // 当前对局
+let gwentTimer = null;                                 // AI 出牌延时
+
+function gwentDeck() {
+  const deck = GWENT_POOL.map((c, i) => ({ uid: i, name: c.name, pow: c.pow }));
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+function gwentSide() {
+  return { deck: gwentDeck(), hand: [], played: [], passed: false, roundWins: 0, power: 0 };
+}
+function gwentDraw(side, n) {
+  for (let i = 0; i < n; i++) {
+    const c = side.deck.pop();
+    if (c) side.hand.push(c);
+  }
+}
+function gwentLog(cls, text) {
+  if (!gwentMatch) return;
+  gwentMatch.log.push({ cls, text });
+  if (gwentMatch.log.length > 40) gwentMatch.log.shift();
+}
+
+function beginGwentMatch() {
+  clearTimeout(gwentTimer);
+  const you = gwentSide(), npc = gwentSide();
+  gwentDraw(you, 5);
+  gwentDraw(npc, 5);
+  gwentMatch = { player: you, npc, round: 1, turn: 'player', over: false, marks: [], log: [], result: '' };
+  gwentLog('sys', '对局开始: 三局两胜, 点数大者赢下当前局。');
+  gwentLog('sys', '第 1 局开始, 双方各 5 张手牌。');
+  $('gwent').style.display = 'flex';
+  $('gwenthead').textContent = '昆特牌 · 与 ' + (CHAR_NAMES[partnerChar] || '伙伴') + ' 对局';
+  renderGwent();
+}
+function startGwent() {
+  if (!partner || partner.downed) return;
+  if (gameState !== 'chat') return;
+  chatOpen = false;
+  $('chat').style.display = 'none';
+  gameState = 'gwent';
+  beginGwentMatch();
+}
+function closeGwent() {
+  clearTimeout(gwentTimer);
+  gwentTimer = null;
+  gwentMatch = null;
+  $('gwent').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+  lastT = performance.now();
+}
+
+function gwentPlayerPlay(uid) {
+  const g = gwentMatch;
+  if (!g || g.over || g.turn !== 'player' || g.player.passed) return;
+  const i = g.player.hand.findIndex((c) => c.uid === uid);
+  if (i < 0) return;
+  const card = g.player.hand.splice(i, 1)[0];
+  g.player.played.push(card);
+  g.player.power += card.pow;
+  gwentLog('you', '你打出「' + card.name + '」, 点数 +' + card.pow + '。');
+  if (g.player.hand.length === 0) {
+    g.player.passed = true;
+    gwentLog('you', '你已没有手牌, 自动过牌。');
+  }
+  if (g.player.passed && g.npc.passed) { gwentResolveRound(); return; }
+  if (g.npc.passed) {
+    // 对方已过牌: 仍是你的回合, 直到你也过牌或手牌用尽
+    g.turn = 'player';
+    renderGwent();
+    return;
+  }
+  g.turn = 'npc';
+  renderGwent();
+  scheduleGwentAi();
+}
+
+function gwentPass(side) {
+  const g = gwentMatch;
+  if (!g || g.over) return;
+  const s = g[side];
+  if (s.passed) return;
+  s.passed = true;
+  gwentLog(side === 'player' ? 'you' : 'npc', side === 'player' ? '你过牌, 本局不再出牌。' : '对方过牌, 本局不再出牌。');
+  if (g.player.passed && g.npc.passed) { gwentResolveRound(); return; }
+  if (side === 'player') {
+    g.turn = 'npc';
+    renderGwent();
+    if (!g.npc.passed) scheduleGwentAi();
+    return;
+  }
+  g.turn = 'player';
+  renderGwent();
+}
+
+function scheduleGwentAi() {
+  clearTimeout(gwentTimer);
+  const token = gwentMatch;
+  gwentTimer = setTimeout(() => {
+    if (!gwentMatch || gwentMatch !== token) return;
+    gwentAiStep();
+  }, 520);
+}
+
+// AI 基本策略: 落后时用刚好能反超的最小牌; 领先时出小牌; 大幅领先或对手已过牌且领先则过牌锁局
+function gwentAiStep() {
+  const g = gwentMatch;
+  if (!g || g.over || g.turn !== 'npc') return;
+  const ai = g.npc, me = g.player;
+  if (ai.passed) {
+    if (!me.passed) { g.turn = 'player'; renderGwent(); }
+    return;
+  }
+  if (ai.hand.length === 0) { gwentPass('npc'); return; }
+
+  const lead = ai.power - me.power;
+  if (me.passed) {
+    if (lead > 0) { gwentPass('npc'); return; }
+  } else if (lead >= 10 && ai.hand.length >= 2) {
+    gwentPass('npc'); return;
+  }
+
+  const cards = ai.hand.slice().sort((a, b) => a.pow - b.pow);
+  let card = cards[0];
+  if (lead < 0) {
+    const need = me.power - ai.power;
+    card = cards.find((c) => c.pow > need) || cards[cards.length - 1];
+  }
+  const i = ai.hand.indexOf(card);
+  if (i < 0) { gwentPass('npc'); return; }
+  ai.hand.splice(i, 1);
+  ai.played.push(card);
+  ai.power += card.pow;
+  gwentLog('npc', '对方打出「' + card.name + '」, 点数 +' + card.pow + '。');
+  if (ai.hand.length === 0) {
+    ai.passed = true;
+    gwentLog('npc', '对方没有手牌, 自动过牌。');
+  }
+  if (ai.passed && me.passed) { gwentResolveRound(); return; }
+  if (me.passed) {
+    // 玩家已过牌: 追上就收手, 没追上继续出
+    if (ai.power > me.power) { gwentPass('npc'); return; }
+    g.turn = 'npc';
+    renderGwent();
+    scheduleGwentAi();
+    return;
+  }
+  g.turn = 'player';
+  renderGwent();
+}
+
+function gwentResolveRound() {
+  const g = gwentMatch;
+  if (!g || g.over) return;
+  const p = g.player.power, n = g.npc.power;
+  let mark = 'tie';
+  if (p > n) { mark = 'win'; g.player.roundWins++; }
+  else if (n > p) { mark = 'lose'; g.npc.roundWins++; }
+  else { g.draws++; }
+  g.marks.push(mark);
+  gwentLog('warn', '第 ' + g.round + ' 局结束: 你 ' + p + ' : ' + n + ' 对方 — ' +
+    (mark === 'win' ? '你赢下本局' : mark === 'lose' ? '对方赢下本局' : '平局'));
+  if (g.player.roundWins >= 2 || g.npc.roundWins >= 2 || g.round >= 3) { gwentEnd(); return; }
+  g.round++;
+  for (const s of [g.player, g.npc]) {
+    s.power = 0;
+    s.passed = false;
+    s.played = [];
+  }
+  gwentDraw(g.player, 1);
+  gwentDraw(g.npc, 1);
+  g.turn = 'player';
+  gwentLog('sys', '第 ' + g.round + ' 局开始, 双方各抽 1 张。');
+  renderGwent();
+}
+
+function gwentEnd() {
+  const g = gwentMatch;
+  g.over = true;
+  g.turn = 'none';
+  const p = g.player.roundWins, n = g.npc.roundWins;
+  g.result = p > n ? 'win' : (p < n ? 'lose' : 'draw');
+  if (g.result === 'win') gwentRecord.wins++;
+  else if (g.result === 'lose') gwentRecord.losses++;
+  else gwentRecord.draws++;
+  gwentLog('warn', '对局结束: 你 ' + p + ' : ' + n + ' 对方, ' +
+    (g.result === 'win' ? '你赢了。' : g.result === 'lose' ? '你输了。' : '双方打平。'));
+  renderGwent();
+  saveGame();   // 战绩立即落盘
+}
+
+function gwentRoundsHtml(g) {
+  let html = '';
+  for (let i = 1; i <= 3; i++) {
+    const m = g.marks[i - 1];
+    let cls = '';
+    if (m === 'win') cls = 'win';
+    else if (m === 'lose') cls = 'lose';
+    else if (m === 'tie') cls = 'tie';
+    else if (i === g.round && !g.over) cls = 'on';
+    html += '<span class="' + cls + '" title="第 ' + i + ' 局">' + i + '</span>';
+  }
+  return html;
+}
+function gwentCardsHtml(side) {
+  return side.played.map((c) => '<span class="gc">' + c.name + ' ' + c.pow + '</span>').join('');
+}
+function renderGwent() {
+  const g = gwentMatch;
+  if (!g) { $('gwentbody').innerHTML = ''; return; }
+  const npcName = CHAR_NAMES[partnerChar] || '伙伴';
+  const me = g.player, npc = g.npc;
+  const turnText = g.over
+    ? (g.result === 'win' ? '你赢下了这局对局' : g.result === 'lose' ? '这局你输了' : '双方打平')
+    : (g.turn === 'player'
+      ? (me.passed ? '你已过牌, 等待对方' : '轮到你出牌')
+      : '对方思考中');
+  const hand = me.hand.map((c) => {
+    const dis = (g.over || g.turn !== 'player' || me.passed) ? ' disabled' : '';
+    return '<button data-uid="' + c.uid + '"' + dis + '><span class="gp">' + c.pow + '</span><span class="gn">' + c.name + '</span></button>';
+  }).join('');
+  const logHtml = g.log.map((l) => '<div class="gl ' + l.cls + '">' + l.text + '</div>').join('');
+  const resultHtml = g.over
+    ? (g.result === 'win' ? '胜利' : g.result === 'lose' ? '失败' : '平局') +
+      ' · 战绩 ' + gwentRecord.wins + ' 胜 ' + gwentRecord.losses + ' 负 ' + gwentRecord.draws + ' 平'
+    : '';
+  $('gwentbody').innerHTML = [
+    '<div class="gwentrounds">' + gwentRoundsHtml(g) + '</div>',
+    '<div class="gwentside npc"><span class="gname">' + npcName + '</span>' +
+      '<span class="gpower">' + npc.power + '</span>' +
+      '<span class="gmeta">手牌 ' + npc.hand.length + ' · 已胜 ' + npc.roundWins + ' 局</span></div>',
+    '<div class="gwentplayed npc">' + gwentCardsHtml(npc) + '</div>',
+    '<div class="gwentmid">第 ' + g.round + ' 局 · <b>' + turnText + '</b></div>',
+    '<div class="gwentplayed">' + gwentCardsHtml(me) + '</div>',
+    '<div class="gwentside"><span class="gname">你</span>' +
+      '<span class="gpower">' + me.power + '</span>' +
+      '<span class="gmeta">手牌 ' + me.hand.length + ' · 已胜 ' + me.roundWins + ' 局</span></div>',
+    '<div class="gwentresult">' + resultHtml + '</div>',
+    '<div class="gwenthand">' + (hand || '<span class="gmeta">没有手牌</span>') + '</div>',
+    '<div class="gwentlog" id="gwentlogscroll">' + logHtml + '</div>',
+  ].join('');
+  const pb = $('gwentpass');
+  pb.disabled = !!(g.over || me.passed || g.turn !== 'player');
+  pb.textContent = me.passed ? '已过牌' : '过牌';
+  $('gwentrestart').style.display = g.over ? '' : 'none';
+  const sc = $('gwentlogscroll');
+  if (sc) sc.scrollTop = sc.scrollHeight;
+}
+
+$('gwentbody').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-uid]');
+  if (!b) return;
+  gwentPlayerPlay(Number(b.dataset.uid));
+});
+$('gwentpass').addEventListener('click', () => {
+  const g = gwentMatch;
+  if (!g || g.over || g.turn !== 'player' || g.player.passed) return;
+  gwentPass('player');
+});
+$('gwentrestart').addEventListener('click', () => {
+  if (gameState === 'gwent') beginGwentMatch();
+});
+$('gwentclose').addEventListener('click', closeGwent);
 
 // 指向目标点的单位方向
 function dirTo(from, to) {
@@ -4213,7 +4567,12 @@ function reset(preserveProgress = false) {
     inst = { player: {}, partner: {} };
     ribbonShow = true;
     musicScore = 0; musicCombo = 0; musicBest = 0; notes = [];
+    gwentRecord = { wins: 0, losses: 0, draws: 0 };
   }
+  clearTimeout(gwentTimer);
+  gwentTimer = null;
+  gwentMatch = null;
+  $('gwent').style.display = 'none';
   pondMode = false;
   fishGame = null;
   $('fishing').style.display = 'none';
@@ -4432,7 +4791,7 @@ function loop(t) {
       return;
     }
 
-    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'chat' || gameState === 'cat' || gameState === 'dog') {
+    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'chat' || gameState === 'cat' || gameState === 'dog' || gameState === 'gwent') {
       render();
       return;
     }
@@ -5322,7 +5681,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108135753 -->
-<script>window.__BUILD='20261108135753';</script>
+
+<!-- build:20261108142507 -->
+<script>window.__BUILD='20261108142507';</script>
 </body>
 </html>
