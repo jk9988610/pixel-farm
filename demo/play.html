@@ -684,7 +684,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === ' ') { if (gameState === 'playing') actionQueued = true; return; }
   if (k >= '1' && k <= String(Math.min(9, CROPS.length))) {
-    if (gameState === 'levelup') return;   // 选卡期间数字键归升级卡使用
+    if (gameState !== 'playing') return;   // 只在游戏中选种: 升级卡/队伍/商店/交谈/安家/结算等界面不误改
     selectedCrop = Number(k) - 1;
     updateFarmHud();
     return;
@@ -4402,7 +4402,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108113157 -->
-<script>window.__BUILD='20261108113157';</script>
+
+<!-- build:20261108114257 -->
+<script>window.__BUILD='20261108114257';</script>
 </body>
 </html>
