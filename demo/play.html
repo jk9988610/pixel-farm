@@ -201,6 +201,18 @@
   }
   .teamrow .tname { color: #dfe8c8; }
   .teamrow .tmeta { display: block; color: #8899aa; font-size: 10px; margin-top: 2px; }
+  .teamrow .tlore { display: block; color: #c9d4c0; font-size: 10px; margin-top: 4px; line-height: 1.45; max-width: 420px; }
+  .teamrow .tpass { display: block; color: #ffd166; font-size: 10px; margin-top: 2px; }
+  .chatpanel { width: 500px; }
+  .chatlog {
+    height: 210px; overflow-y: auto; margin: 8px 0;
+    padding: 8px 10px; background: #0f1720; border: 1px solid #2c3a4c;
+  }
+  .chatlog .cline { margin: 5px 0; line-height: 1.55; color: #dfe8c8; font-size: 11px; }
+  .chatlog .cline.partner { color: #9fe07a; }
+  .chatlog .cline.you { color: #7df9ff; }
+  .chatlog .cline.sys { color: #8899aa; }
+  .chatopts { display: flex; gap: 8px; flex-wrap: wrap; }
   .teamrow button { min-width: 60px; }
   .teamrow button:disabled { opacity: 0.5; cursor: default; }
   .catpanel { width: 540px; max-height: 82vh; overflow-y: auto; }
@@ -243,7 +255,7 @@
   <div>成长: 技能点 <span id="sp">0</span> · 饰品 <span id="acc">0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
-  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝 · G 狗 · E 宝箱 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝 · G 狗 · E 宝箱 · Q 交谈 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -340,6 +352,20 @@
   </div>
 </div>
 
+<div id="chat" class="overlay">
+  <div class="panel chatpanel">
+    <div class="ptitle" id="chathead">与伙伴交谈</div>
+    <div class="coinline" id="chatbg"></div>
+    <div id="chatlog" class="chatlog"></div>
+    <div class="chatopts">
+      <button data-topic="here">聊聊眼前</button>
+      <button data-topic="heart">你的心事</button>
+      <button data-topic="bye">先走了</button>
+    </div>
+    <button id="chatclose" class="close">关闭（Q / Esc）</button>
+  </div>
+</div>
+
 <script type="module">
 // 全局错误显示
 window.addEventListener('error', (e) => {
@@ -426,6 +452,102 @@ const CHAR_TIPS = {
   villager: '基础型', girl: '快速低血', elder: '慢速高攻', merchant: '均衡', child: '极速脆皮',
   fisherman: '稳健耐久', smith: '高攻高血', hunter: '均衡速射', cat: '极速连射',
 };
+// 人物背景 + 与背景呼应的小被动 (对本人生效, 换谁扮演手感不同)
+const CHAR_LORE = {
+  villager: {
+    bg: '在村里出生长大, 也打算在这里老去。没什么大本事, 但谁家缺人手都愿意搭一把。',
+    passive: { name: '乡里乡亲', desc: '受到伤害 -10%' },
+    chat: {
+      greet: '吃了没？没吃就先坐会儿。',
+      here: ['地里的活儿不急, 人急了反而容易出错。', '村里安静的时候最好, 连狗都不叫。'],
+      heart: ['前阵子东头的老屋塌了半边, 我一直想去修, 可总腾不出手。', '我不太会说漂亮话, 但答应过的事就会做到底。'],
+    },
+  },
+  girl: {
+    bg: '跑得比风还快, 总想赶在晚饭前把整条田埂跑完。口袋里常揣着一颗没舍得吃的糖。',
+    passive: { name: '轻快脚步', desc: '移速 +8%' },
+    chat: {
+      greet: '你来啦！我刚跑完一圈, 气还没喘匀。',
+      here: ['我总觉得, 再快一点就能把想做的事都做完。', '等会儿一起去看看村口那棵老树吧, 花开得正好。'],
+      heart: ['那颗糖我一直留着, 想送给一个特别的人, 可又怕人家不喜欢。', '有时候跑得越快, 越觉得心里空空的。'],
+    },
+  },
+  elder: {
+    bg: '在田边坐了大半辈子, 看惯了日出日落。手慢, 但一锄头下去从不落空。',
+    passive: { name: '老练手法', desc: '攻击间隔 -10%' },
+    chat: {
+      greet: '坐吧。茶还温着。',
+      here: ['日子一天一天过, 地也一天一天长, 急不得。', '我年轻时也想过离开, 后来发现哪儿都一样, 心安就好。'],
+      heart: ['我总梦见年轻时的那片田, 醒来却记不清种的是什么。', '人老了不怕慢, 就怕没人说话。你来了就好。'],
+    },
+  },
+  merchant: {
+    bg: '从港口带着一箱杂货来的外乡人。算账时眼睛发亮, 收摊时却总多留一把菜给邻居。',
+    passive: { name: '生意经', desc: '卖出价 +8%' },
+    chat: {
+      greet: '哟, 稀客。今天想看点什么？',
+      here: ['行情这东西, 看不懂的时候最好别硬看。', '这地方的买卖不大, 人情却比港口厚。'],
+      heart: ['我出来这么多年, 箱子越装越满, 家却越来越远。', '有时候算完账, 会忘了自己到底在攒什么。'],
+    },
+  },
+  child: {
+    bg: '个子刚够到柜台, 胆子却比谁都大。捡东西时手脚快得让人怀疑是不是练过。',
+    passive: { name: '眼疾手快', desc: '拾取半径 +30%' },
+    chat: {
+      greet: '你来得正好！我正找东西呢。',
+      here: ['我刚才在那边看到亮晶晶的东西, 捡起来又掉了, 真气人。', '大人总说别乱跑, 可不动弹多没意思。'],
+      heart: ['我想快点长大, 这样就能帮上忙了。', '我藏了一颗最好看的石子, 谁都不给看——你想看吗？'],
+    },
+  },
+  fisherman: {
+    bg: '在河上讨生活, 风浪见得多。话少, 做事稳, 落水的人他背过三个。',
+    passive: { name: '稳扎稳打', desc: '受到伤害 -15%' },
+    chat: {
+      greet: '回来了。河上今天没什么风。',
+      here: ['稳一点, 比什么都要紧。', '鱼不咬钩的时候, 我就坐着看水, 水会告诉你时候到了。'],
+      heart: ['那年发大水, 我背出来三个人, 还有一个没赶上。', '有些事过去了, 可晚上静下来还是会想起。'],
+    },
+  },
+  smith: {
+    bg: '村里的铁匠, 手臂比锄头还粗。打的刀不算快, 但每一刀都分量十足。',
+    passive: { name: '铁匠臂力', desc: '攻击伤害 +15%' },
+    chat: {
+      greet: '小心点, 别碰着炉子。',
+      here: ['活儿做得慢没关系, 做一件是一件。', '铁要烧透了才好打, 人也是。'],
+      heart: ['我一直想打一把最好的刀, 可总差一点火候。', '手上有伤不怕, 怕的是心气泄了。'],
+    },
+  },
+  hunter: {
+    bg: '在林子里追着脚印长大, 知道什么时候该屏住呼吸。比起硬拼, 更信第一下就打中要害。',
+    passive: { name: '猎手直觉', desc: '暴击率 +8%' },
+    chat: {
+      greet: '脚步轻一点, 林子里的东西都听着呢。',
+      here: ['看见了吗？那边草在动。', '打猎不是比谁快, 是比谁先沉住气。'],
+      heart: ['我追过一只鹿很久, 最后它停下来看着我, 我反而没下手。', '有时候我在想, 追的到底是猎物, 还是别的什么。'],
+    },
+  },
+  cat: {
+    bg: '没人知道它从哪来, 只是某天起就蹲在门口。白天像一团毛线, 夜里却总在屋顶上。',
+    passive: { name: '猫的直觉', desc: '挖宝运气 +3' },
+    chat: {
+      greet: '喵。',
+      here: ['（它蹭了蹭你的裤脚, 尾巴扫过田埂。）', '（猫蹲在篱笆上, 盯着远处看了很久。）'],
+      heart: ['（它把一只旧铃铛推到你脚边, 铃铛已经不会响了。）', '（它翻了个身, 露出肚皮, 又假装无事发生。）'],
+    },
+  },
+};
+function charForRole(key) { return key === 'partner' ? partnerChar : usingChar; }
+function charOfActor(a) { return charForRole(roleKey(a)); }
+function passiveSpeedMul(a) { return charOfActor(a) === 'girl' ? 1.08 : 1; }
+function passiveAtkMul(a) { return charOfActor(a) === 'elder' ? 0.9 : 1; }
+function passiveDmgMul(a) { return charOfActor(a) === 'smith' ? 1.15 : 1; }
+function passiveCritAdd(a) { return charOfActor(a) === 'hunter' ? 0.08 : 0; }
+function passivePickMul(a) { return charOfActor(a) === 'child' ? 1.3 : 1; }
+function passiveDmgTakenMul(a) {
+  const n = charOfActor(a);
+  return n === 'villager' ? 0.9 : (n === 'fisherman' ? 0.85 : 1);
+}
+function passiveLuckAdd(key) { return charForRole(key) === 'cat' ? 3 : 0; }
 function buildCharPick() {
   const box = $('charPick');
   if (!box || box.dataset.built === '1') return;
@@ -435,7 +557,8 @@ function buildCharPick() {
     b.className = 'ch-chip';
     b.dataset.char = n;
     b.textContent = CHAR_NAMES[n] || n;
-    b.title = CHAR_TIPS[n] || '';
+    const lore = CHAR_LORE[n];
+    b.title = (CHAR_TIPS[n] || '') + (lore ? ' · 被动「' + lore.passive.name + '」' + lore.passive.desc : '');
     b.onclick = () => setChar(n);
     box.appendChild(b);
   }
@@ -539,6 +662,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'escape') {
     if (gameState === 'homemove') { cancelHomeMove(); return; }
     if (teamOpen) { closeTeam(); return; }
+    if (chatOpen) { closeChat(); return; }
     if (catOpen) { closeCat(); return; }
     if (dogOpen) { closeDog(); return; }
     if (shopOpen) { closeShop(); return; }
@@ -552,6 +676,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'f') { if (gameState === 'playing') tryPlayerDig(); return; }   // 挖宝: 站原地即可, 白天黑夜不限
   if (k === 'g') { if (gameState === 'playing' || dogOpen) toggleDog(); return; }   // 狗的搜寻设置
   if (k === 'e') { if (gameState === 'playing') openChest(); return; }   // 开启附近的 Boss 宝箱
+  if (k === 'q') { if (gameState === 'playing' || chatOpen) toggleChat(); return; }   // 与伙伴交谈
   if (k === 'enter') {
     if (gameState === 'homemove') { confirmHomeMove(); return; }
     closeSettlement();
@@ -629,6 +754,13 @@ function trySwitchByClick(p) {
 // 短按左键点在猫/狗身上 -> 打开对应设置 (宠物不可被扮演, 不进 getActors)
 function tryClickNpc(p) {
   if (gameState !== 'playing') return false;
+  if (partner && !partner.downed) {
+    const psx = partner.x - camX, psy = partner.y - camY;
+    if (Math.abs(p.x - psx) <= 18 && p.y >= psy - 34 && p.y <= psy + 6) {
+      openChat();
+      return true;
+    }
+  }
   const cp = catPos();
   const sx = cp.x - camX, sy = cp.y - camY;
   if (Math.abs(p.x - sx) <= 16 && p.y >= sy - 34 && p.y <= sy + 6) {
@@ -983,7 +1115,9 @@ function buyDiscount(key) {
   return Math.min(0.3, charmOf(key) * 0.01);
 }
 function salePriceFor(i, key) {
-  return Math.max(1, Math.round(sellPrice(i) * (1 + charmOf(key) * 0.03)));
+  let mul = 1 + charmOf(key) * 0.03;
+  if (charForRole(key) === 'merchant') mul *= 1.08;
+  return Math.max(1, Math.round(sellPrice(i) * mul));
 }
 // 每日特价: 按 dayNumber 确定性地落在某一件商品/种子上, 打 8 折
 function specialSlot() {
@@ -1165,7 +1299,7 @@ function recruitPartner() {
   if (activeChar === partner) setControlled(player);   // 招募时先把控制权切回玩家
   partnerChar = n;
   partner.tex = charTextures[n] || null;
-  shopMsg('招募成功：' + (CHAR_NAMES[n] || n) + ' 加入队伍（等级与技能保留）', false);
+  shopMsg('招募成功：' + (CHAR_NAMES[n] || n) + ' 加入队伍（被动「' + (CHAR_LORE[n] ? CHAR_LORE[n].passive.name : '-') + '」，等级与技能保留）', false);
   renderTeam();
   updateFarmHud();
   saveGame();
@@ -1747,7 +1881,7 @@ let digPity = { player: 0, partner: 0 };   // 软保底计数(未出稀有的连
 
 function roleKey(a) { return (a && a.role === 'partner') ? 'partner' : 'player'; }
 function roleLuck(key) {
-  let n = 0;
+  let n = passiveLuckAdd(key);
   for (const id of items[key].acc) {
     const p = ACC_POOL.find((x) => x.id === id);
     if (p) n += p.luck || 0;
@@ -2347,6 +2481,8 @@ function updatePartnerTaskHud() {
 }
 // 队伍管理面板: 打开时暂停游戏, 列出玩家与伙伴, 可切换扮演角色 / 设置守家
 let teamOpen = false;
+let chatOpen = false;
+let chatTopicCount = { here: 0, heart: 0 };
 function charLabel(a) {
   if (a === player) return '玩家 · ' + (CHAR_NAMES[usingChar] || usingChar || '');
   return '伙伴 · ' + (CHAR_NAMES[partnerChar] || partnerChar || '');
@@ -2366,7 +2502,14 @@ function renderTeam() {
     const meta = document.createElement('div');
     meta.className = 'tmeta';
     meta.textContent = 'HP ' + Math.max(0, Math.ceil(a.hp)) + '/' + a.maxHp + ' · ' + partnerTaskName(a);
-    info.appendChild(nm); info.appendChild(meta);
+    const lore = CHAR_LORE[charOfActor(a)];
+    const tl = document.createElement('div');
+    tl.className = 'tlore';
+    tl.textContent = lore ? lore.bg : '';
+    const tp = document.createElement('div');
+    tp.className = 'tpass';
+    tp.textContent = lore ? '被动「' + lore.passive.name + '」' + lore.passive.desc : '';
+    info.appendChild(nm); info.appendChild(meta); info.appendChild(tl); info.appendChild(tp);
     const bPlay = document.createElement('button');
     bPlay.textContent = '选择';
     bPlay.disabled = (a === activeChar) || a.downed;
@@ -2408,6 +2551,81 @@ function toggleTeam() {
 }
 $('ptask').addEventListener('click', openTeam);
 $('teamclose').addEventListener('click', closeTeam);
+
+// ===== 伙伴交流: 内容取自人物背景, 分"眼前"与"心事"两个话题 =====
+function chatAppend(who, text) {
+  const box = $('chatlog');
+  const d = document.createElement('div');
+  d.className = 'cline ' + who;
+  if (who === 'partner') d.textContent = (CHAR_NAMES[partnerChar] || '伙伴') + '：' + text;
+  else if (who === 'you') d.textContent = '你：' + text;
+  else d.textContent = text;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+function situationText() {
+  const ready = plots.filter((p) => p.state === 'ready').length;
+  const t = phase === 'night' ? '天已经黑了, 外面不太平。' : '天还亮着, 风里有田里的味道。';
+  return t + '田里有 ' + ready + ' 块地能收了, 袋里 ' + coins + ' 金。';
+}
+function chatTopic(kind) {
+  const lore = CHAR_LORE[partnerChar];
+  if (!lore) return;
+  if (kind === 'here') {
+    chatAppend('sys', '（' + situationText() + '）');
+    const line = lore.chat.here[chatTopicCount.here % lore.chat.here.length];
+    chatTopicCount.here++;
+    chatAppend('partner', line);
+    chatAppend('you', '嗯, 我再看看。');
+  } else if (kind === 'heart') {
+    const line = lore.chat.heart[chatTopicCount.heart % lore.chat.heart.length];
+    chatTopicCount.heart++;
+    chatAppend('partner', line);
+    chatAppend('you', '（你安静地听着, 没有打断。）');
+  } else {
+    chatAppend('you', '先走了, 回头见。');
+    chatAppend('partner', '嗯, 路上小心。');
+  }
+}
+function openChat() {
+  if (gameState !== 'playing' || !partner || partner.downed) return;
+  const me = activeChar || player;
+  if (me && Math.hypot(partner.x - me.x, partner.y - me.y) > 220) {
+    popText(me.x, me.y - 34, '伙伴离得太远, 先靠近再聊', '#8899aa', 10);
+    return;
+  }
+  chatOpen = true;
+  gameState = 'chat';
+  chatTopicCount = { here: 0, heart: 0 };
+  resetInput();
+  $('chat').style.display = 'flex';
+  const lore = CHAR_LORE[partnerChar] || CHAR_LORE.villager;
+  $('chathead').textContent = '与 ' + (CHAR_NAMES[partnerChar] || '伙伴') + ' 交谈 · 被动「' + lore.passive.name + '」';
+  $('chatbg').textContent = lore.bg;
+  const log = $('chatlog');
+  log.innerHTML = '';
+  chatAppend('sys', '（' + (CHAR_NAMES[partnerChar] || '伙伴') + ' 放下手里的活, 看向你。）');
+  chatAppend('partner', lore.chat.greet);
+}
+function closeChat() {
+  if (!chatOpen) return;
+  chatOpen = false;
+  $('chat').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+  lastT = performance.now();
+}
+function toggleChat() {
+  if (chatOpen) closeChat();
+  else openChat();
+}
+$('chatclose').addEventListener('click', closeChat);
+document.querySelector('.chatopts').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.topic === 'bye') closeChat();
+  else chatTopic(b.dataset.topic);
+});
 
 // 指向目标点的单位方向
 function dirTo(from, to) {
@@ -2475,7 +2693,7 @@ class Actor {
     const moving = Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01;
 
     if (moving) {
-      const spd = this.speed * (colaT[roleKey(this)] > 0 ? COLA_MUL : 1);
+      const spd = this.speed * (colaT[roleKey(this)] > 0 ? COLA_MUL : 1) * passiveSpeedMul(this);
       this.x += dx * spd * dt;
       this.y += dy * spd * dt;
       this.x = Math.max(20, Math.min(WORLD_W - 20, this.x));
@@ -2524,10 +2742,10 @@ class Actor {
             x: this.x, y: this.y - 12,
             vx: Math.cos(a) * this.projSpeed,
             vy: Math.sin(a) * this.projSpeed,
-            dmg: this.dmg, life: 1.5, pierce: this.pierce, hits: null, dead: false, owner: this,
+            dmg: this.dmg * passiveDmgMul(this), life: 1.5, pierce: this.pierce, hits: null, dead: false, owner: this,
           });
         }
-        this.atkTimer = this.atkSpeed;
+        this.atkTimer = this.atkSpeed * passiveAtkMul(this);
         this.atkAnim = 0.3;   // 播一段攻击动作, 结束自动回 idle/walk
       } else {
         this.atkTimer = 0.1;
@@ -2597,7 +2815,7 @@ class Actor {
 
   takeDamage(dmg) {
     if (this.iframe > 0 || this.downed) return;
-    this.hp -= dmg;
+    this.hp -= dmg * passiveDmgTakenMul(this);
     this.iframe = 0.4;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -3001,7 +3219,8 @@ function updateGems(dt) {
     let magnet = null, md = GEM_MAGNET_R;
     for (const a of actors) {
       const d = Math.hypot(a.x - g.x, a.y - g.y);
-      if (d < pd) { pd = d; picker = a; }
+      const pr = GEM_PICK_R * passivePickMul(a);
+      if (d < pr && d < pd) { pd = d; picker = a; }
       if (d < md) { md = d; magnet = a; }
     }
     if (picker) {
@@ -3179,6 +3398,9 @@ function reset(preserveProgress = false) {
   $('settle').style.display = 'none';
   teamOpen = false;
   $('team').style.display = 'none';
+  chatOpen = false;
+  chatTopicCount = { here: 0, heart: 0 };
+  $('chat').style.display = 'none';
   catOpen = false;
   $('cat').style.display = 'none';
   dogOpen = false;
@@ -3363,7 +3585,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'cat' || gameState === 'dog') {
+    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'chat' || gameState === 'cat' || gameState === 'dog') {
       render();
       return;
     }
@@ -3552,7 +3774,7 @@ function loop(t) {
         if (Math.hypot(b.x - e.x, b.y - e.y) < e.size + 3) {
           // 暴击: 按射出子弹的角色掷一次, 伤害 x2 且飘字更大更亮
           const owner = b.owner || player;
-          const crit = Math.random() < owner.critChance;
+          const crit = Math.random() < (owner.critChance + passiveCritAdd(owner));
           const dmg = Math.round(b.dmg * (crit ? owner.critMul : 1));
           e.hp -= dmg;
           e.flash = 0.08;
@@ -4179,7 +4401,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108111918 -->
-<script>window.__BUILD='20261108111918';</script>
+
+<!-- build:20261108113157 -->
+<script>window.__BUILD='20261108113157';</script>
 </body>
 </html>
