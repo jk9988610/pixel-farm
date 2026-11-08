@@ -199,6 +199,10 @@
   .catrow button:disabled { opacity: 0.35; cursor: default; }
   .catrow .caton { color: #9fe07a; }
   .catrow .catoff { color: #8899aa; }
+  .dogpanel { width: 520px; }
+  .dogrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .dogrow input[type=range] { flex: 1; accent-color: #9fe07a; }
+  .dogrow button.on { border-color: #9fe07a; color: #9fe07a; }
 </style>
 </head>
 <body>
@@ -214,15 +218,17 @@
 </div>
 <div id="hpbar"><div id="hpfill"></div></div>
 <div id="hptext">100 / 100</div>
-<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · 左键点角色切换 · T 队伍管理 · C 猫 · Esc 暂停</div>
+<div id="hint">白天种田 · 夜晚防守 · WASD / 方向键 移动 · 左键点角色切换 · T 队伍管理 · C 猫 · G 狗 · Esc 暂停</div>
 <div id="farmhud">
   <div>金币: <span id="coins">100</span></div>
   <div>种子: <span id="seedname">萝卜 5 / 小麦 3 / 番茄 2 / 玉米 2 / 南瓜 0</span></div>
   <div>作物: <span id="produce">萝卜 0 / 小麦 0 / 番茄 0 / 玉米 0 / 南瓜 0</span></div>
   <div id="plothint">地块: 9 块 · 下一块 50 金 (B 购买)</div>
+  <div>存货: 猫粮 <span id="catfoodhud">2</span> · 狗粮 <span id="dogfoodhud">0</span></div>
+  <div>成长: 技能点 <span id="sp">0</span> · 饰品 <span id="acc">0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
-  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝 · G 狗 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -295,6 +301,17 @@
     <div id="catcfg"></div>
     <div class="msg" id="catmsg"></div>
     <button id="catclose" class="close">关闭（C / Esc）</button>
+  </div>
+</div>
+<div id="dog" class="overlay">
+  <div class="panel dogpanel">
+    <div class="ptitle">狗 · 战利品搜寻</div>
+    <div class="coinline">狗粮: <span id="dogfood2">0</span> <button id="dogfeed">喂 1 份狗粮</button></div>
+    <div class="dogrow"><span>任务</span><button id="dogmodeexp" data-mode="exp">拾取经验</button><button id="dogmodeloot" data-mode="loot">寻找战利品</button></div>
+    <div class="dogrow"><span>搜索半径</span><input type="range" id="dogradius" min="80" max="420" step="10"><span id="dogradiusv">260px</span></div>
+    <div class="dogrow"><span>移动速度</span><input type="range" id="dogspeed" min="40" max="140" step="5"><span id="dogspeedv">70</span></div>
+    <div class="msg" id="dogmsg">狗待在家园旁的窝里，只在搜索半径内工作，不跟随玩家跑图。</div>
+    <button id="dogclose" class="close">关闭（G / Esc）</button>
   </div>
 </div>
 
@@ -497,6 +514,7 @@ window.addEventListener('keydown', (e) => {
     if (gameState === 'homemove') { cancelHomeMove(); return; }
     if (teamOpen) { closeTeam(); return; }
     if (catOpen) { closeCat(); return; }
+    if (dogOpen) { closeDog(); return; }
     if (shopOpen) { closeShop(); return; }
     togglePause();
     return;
@@ -505,6 +523,8 @@ window.addEventListener('keydown', (e) => {
   if (k === 'b') { if (gameState === 'playing' || shopOpen) toggleShop(); return; }
   if (k === 't') { if (gameState === 'playing' || teamOpen) toggleTeam(); return; }   // 队伍管理面板(打开时暂停)
   if (k === 'c') { if (gameState === 'playing' || catOpen) toggleCat(); return; }   // 猫的自动农场设置
+  if (k === 'f') { if (gameState === 'playing') tryPlayerDig(); return; }   // 挖宝: 站原地即可, 白天黑夜不限
+  if (k === 'g') { if (gameState === 'playing' || dogOpen) toggleDog(); return; }   // 狗的搜寻设置
   if (k === 'enter') {
     if (gameState === 'homemove') { confirmHomeMove(); return; }
     closeSettlement();
@@ -565,6 +585,7 @@ function setControlled(a) {
   if (partner) partner.controlled = (partner === a);
   resetInput();   // 清掉上一个角色残留的移动输入, 避免切换后乱走
   updateHud();
+  updateFarmHud();   // 技能点/饰品按当前扮演角色显示
   popText(a.x, a.y - 46, a === player ? '控制: 玩家' : ('控制: 伙伴 · ' + partnerTaskName()), '#7df9ff', 12);
 }
 // 短按左键点在角色身上 -> 切换控制
@@ -578,13 +599,18 @@ function trySwitchByClick(p) {
   }
   if (hit) setControlled(hit);
 }
-// 短按左键点在猫身上 -> 打开自动农场设置 (猫不可被扮演, 不进 getActors)
+// 短按左键点在猫/狗身上 -> 打开对应设置 (宠物不可被扮演, 不进 getActors)
 function tryClickNpc(p) {
   if (gameState !== 'playing') return false;
   const cp = catPos();
   const sx = cp.x - camX, sy = cp.y - camY;
   if (Math.abs(p.x - sx) <= 16 && p.y >= sy - 34 && p.y <= sy + 6) {
     openCat();
+    return true;
+  }
+  const dsx = dog.x - camX, dsy = dog.y - camY;
+  if (Math.abs(p.x - dsx) <= 18 && p.y >= dsy - 34 && p.y <= dsy + 6) {
+    openDog();
     return true;
   }
   return false;
@@ -1166,6 +1192,11 @@ function updateFarmHud() {
   $('seedname').textContent = CROPS.map((c, i) => c.name + ' ' + seeds[i]).join(' / ');
   $('produce').textContent = CROPS.map((c, i) => c.name + ' ' + produce[i]).join(' / ');
   $('nkills').textContent = nightKills;
+  $('catfoodhud').textContent = catFood;
+  $('dogfoodhud').textContent = dogFood;
+  const key = roleKey(activeChar);
+  $('sp').textContent = items[key].sp;
+  $('acc').textContent = items[key].acc.length;
   const cost = nextPlotCost();
   $('plothint').textContent = '地块: ' + plots.length + ' 块 · 下一块 ' + cost + ' 金 (B 购买)';
   if ($('buyplot')) {
@@ -1303,6 +1334,7 @@ function feedCat() {
   catFeedT = Math.min(CAT_FEED_SEC * 2, catFeedT + CAT_FEED_SEC);
   catMsg('喂了 1 份猫粮，接下来 ' + CAT_FEED_SEC + ' 秒加速工作', false);
   renderCat();
+  updateFarmHud();
   saveDirty = true;
 }
 
@@ -1444,6 +1476,7 @@ function cancelHomeMove() {
 function confirmHomeMove() {
   if (gameState !== 'homemove' || !pendingHomeMove) return;
   home = { x: pendingHomeMove.x, y: pendingHomeMove.y };   // 逻辑与绘制立即落到新位置, 不做平移补间
+  resetDogState();   // 狗窝随家园一起搬到新位置
   // 守卫伙伴同步到新家园附近, 不留原地
   if (partner && partner.task === 'guard') {
     const hc = homeCenter();
@@ -1457,6 +1490,283 @@ function confirmHomeMove() {
   popText(me.x, me.y - 34, '家园已迁至此地', '#9fe07a', 12);
   saveGame();   // 迁移后立即写档
 }
+
+// ===== 挖宝 (F, 白天黑夜任意地点站桩可挖) =====
+// 类似抽卡: 金币/猫粮/狗粮为主, 低概率稀有(技能点或饰品); 连续未出稀有会软保底递增.
+const DIG_COOLDOWN = 10;       // 玩家手动最短间隔(秒)
+const DIG_AUTO_CD = 30;        // 伙伴白天空闲时自动挖的间隔(秒)
+const ACC_POOL = [
+  { id: 'ring',     name: '黄铜戒指', charm: 3, luck: 0 },
+  { id: 'necklace', name: '铜项链',   charm: 0, luck: 3 },
+  { id: 'clover',   name: '四叶草',   charm: 1, luck: 1 },
+];
+let dogFood = 0;
+// 按角色独立保存的成长物: sp=技能点, acc=已获得的饰品 id
+let items = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
+let digCD = { player: 0, partner: 0 };
+let digPity = { player: 0, partner: 0 };   // 软保底计数(未出稀有的连续次数)
+
+function roleKey(a) { return (a && a.role === 'partner') ? 'partner' : 'player'; }
+function roleLuck(key) {
+  let n = 0;
+  for (const id of items[key].acc) {
+    const p = ACC_POOL.find((x) => x.id === id);
+    if (p) n += p.luck || 0;
+  }
+  return n;
+}
+function sanitizeRoleItems(raw) {
+  const out = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k of ['player', 'partner']) {
+    const r = raw[k];
+    if (!r || typeof r !== 'object') continue;
+    if (isNum(r.sp)) out[k].sp = Math.max(0, Math.floor(r.sp));
+    if (Array.isArray(r.acc)) {
+      out[k].acc = r.acc.filter((id) => ACC_POOL.some((p) => p.id === id)).slice(0, 50);
+    }
+  }
+  return out;
+}
+
+// 单次抽奖: 先判定稀有(受运气与软保底影响), 否则在三种普通奖励里均分
+function rollDig(key) {
+  const lucky = roleLuck(key);
+  const rareChance = Math.min(0.5, 0.11 + digPity[key] * 0.02 + lucky * 0.005);
+  if (Math.random() < rareChance) {
+    digPity[key] = 0;
+    if (Math.random() < 0.5) {
+      items[key].sp++;
+      return { text: '技能点 +1', rare: true };
+    }
+    const acc = ACC_POOL[Math.floor(Math.random() * ACC_POOL.length)];
+    items[key].acc.push(acc.id);
+    return { text: '稀有饰品「' + acc.name + '」', rare: true };
+  }
+  digPity[key]++;
+  const roll = Math.random();
+  if (roll < 0.33) {
+    const n = Math.round((8 + dayNumber * 2) * (0.75 + Math.random() * 0.75));
+    coins += n;
+    return { text: '金币 +' + n, rare: false };
+  }
+  if (roll < 0.66) {
+    catFood++;
+    return { text: '猫粮 +1', rare: false };
+  }
+  dogFood++;
+  return { text: '狗粮 +1', rare: false };
+}
+
+function doDig(key, src) {
+  const reward = rollDig(key);
+  popText(src.x, src.y - 34, '挖宝: ' + reward.text, reward.rare ? '#ffd166' : '#9fe07a', reward.rare ? 12 : 10);
+  burst(src.x, src.y + 2, '#8a6a3a', 6);
+  if (reward.rare) addShake(2);
+  updateFarmHud();
+  saveDirty = true;
+}
+
+function tryPlayerDig() {
+  if (!activeChar) return;
+  const key = roleKey(activeChar);
+  if (digCD[key] > 0) {
+    popText(activeChar.x, activeChar.y - 30, '挖宝冷却 ' + Math.ceil(digCD[key]) + 's', '#8899aa', 10);
+    return;
+  }
+  digCD[key] = DIG_COOLDOWN;
+  doDig(key, activeChar);
+}
+
+// ===== 狗 · 战利品搜寻 (G) =====
+// 狗待在家园旁的窝里, 只在搜索半径内工作, 不跟随玩家跑图; 任务二选一:
+// 'exp'  = 把范围内掉落的经验宝石叼回来(共享经验, 不参战)
+// 'loot' = 在半径内自己找地方嗅探, 产出小幅金币/猫狗粮, 低概率饰品
+const DOG_FEED_SEC = 60;
+const DOG_BASE = { mode: 'exp', radius: 260, speed: 70 };
+let dogCfg = { ...DOG_BASE };
+let dogOpen = false;
+let dogFeedT = 0;
+let dogInited = false;
+const dog = { x: 0, y: 0, tx: null, ty: null, gem: null, looting: false, lootWait: 0 };
+
+function dogHomePos() {
+  return clampEntityToWorld(home.x + FARM_W + 22, home.y + farmH() - 8);
+}
+function resetDogState() {
+  const h = dogHomePos();
+  dog.x = h.x; dog.y = h.y;
+  dog.tx = dog.ty = null; dog.gem = null;
+  dog.looting = false; dog.lootWait = 0; dogFeedT = 0;
+  dogInited = true;
+}
+function sanitizeDogCfg(raw) {
+  const cfg = { ...DOG_BASE };
+  if (!raw || typeof raw !== 'object') return cfg;
+  if (raw.mode === 'exp' || raw.mode === 'loot') cfg.mode = raw.mode;
+  if (isNum(raw.radius)) cfg.radius = Math.max(80, Math.min(420, Math.floor(raw.radius)));
+  if (isNum(raw.speed)) cfg.speed = Math.max(40, Math.min(140, Math.floor(raw.speed)));
+  return cfg;
+}
+function dogMsg(text, isErr) {
+  const el = $('dogmsg');
+  el.textContent = text;
+  el.className = 'msg' + (isErr ? '' : ' ok');
+}
+function renderDog() {
+  $('dogfood2').textContent = dogFood;
+  $('dogfeed').disabled = dogFood <= 0;
+  $('dogmodeexp').className = dogCfg.mode === 'exp' ? 'on' : '';
+  $('dogmodeloot').className = dogCfg.mode === 'loot' ? 'on' : '';
+  $('dogradius').value = dogCfg.radius;
+  $('dogradiusv').textContent = dogCfg.radius + 'px';
+  $('dogspeed').value = dogCfg.speed;
+  $('dogspeedv').textContent = dogCfg.speed;
+}
+function setDogMode(m) {
+  if (m !== 'exp' && m !== 'loot') return;
+  dogCfg.mode = m;
+  dog.tx = dog.ty = null; dog.gem = null; dog.looting = false; dog.lootWait = 0;
+  renderDog();
+  saveDirty = true;
+}
+function feedDog() {
+  if (dogFood <= 0) {
+    dogMsg('没有狗粮了：挖宝与后续玩法可获得狗粮', true);
+    return;
+  }
+  dogFood--;
+  dogFeedT = DOG_FEED_SEC;
+  dogMsg('喂了 1 份狗粮，' + DOG_FEED_SEC + ' 秒内移动速度提升', false);
+  renderDog(); updateFarmHud(); saveDirty = true;
+}
+function openDog() {
+  if (gameState !== 'playing' || !player) return;
+  dogOpen = true;
+  gameState = 'dog';
+  resetInput();
+  dogMsg('狗待在家园旁的窝里，只在搜索半径内工作，不跟随玩家跑图。', false);
+  renderDog();
+  $('dog').style.display = 'flex';
+}
+function closeDog() {
+  if (!dogOpen) return;
+  dogOpen = false;
+  $('dog').style.display = 'none';
+  gameState = 'playing';
+  updateHud();
+  lastT = performance.now();
+}
+function toggleDog() {
+  if (dogOpen) closeDog();
+  else openDog();
+}
+
+function dogMoveTo(tx, ty, dt) {
+  const dx = tx - dog.x, dy = ty - dog.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 6) return true;
+  const sp = dogCfg.speed * (dogFeedT > 0 ? 1.6 : 1);
+  dog.x += dx / d * sp * dt;
+  dog.y += dy / d * sp * dt;
+  return false;
+}
+function dogLoot() {
+  const r = Math.random();
+  let text = '', rare = false;
+  if (r < 0.05) {
+    const acc = ACC_POOL[Math.floor(Math.random() * ACC_POOL.length)];
+    items[roleKey(activeChar)].acc.push(acc.id);
+    text = '稀有饰品「' + acc.name + '」';
+    rare = true;
+  } else if (r < 0.27) {
+    dogFood++;
+    text = '狗粮 +1';
+  } else if (r < 0.47) {
+    catFood++;
+    text = '猫粮 +1';
+  } else {
+    const n = Math.round((5 + dayNumber) * (0.7 + Math.random() * 0.8));
+    coins += n;
+    text = '金币 +' + n;
+  }
+  popText(dog.x, dog.y - 30, '狗: ' + text, rare ? '#ffd166' : '#9fe07a', rare ? 11 : 9);
+  burst(dog.x, dog.y + 2, '#8a6a3a', 5);
+  updateFarmHud();
+  saveDirty = true;
+}
+function collectGemByDog(g) {
+  if (g.kind === 'rare') {
+    const a = activeChar || player;
+    if (a) applyRandomUpgrade(a);
+  } else {
+    const ups = gainXp(g.value);
+    if (ups > 0) enqueueUps(ups);
+  }
+  popText(g.x, g.y - 10, '+' + g.value, '#7df9ff', 9);
+}
+function updateDog(dt) {
+  if (!dogInited) resetDogState();
+  if (dogFeedT > 0) dogFeedT = Math.max(0, dogFeedT - dt);
+  const h = dogHomePos();
+  if (dog.tx !== null) {
+    // 经验目标可能被玩家吸走/耗尽, 超出搜索半径就放弃
+    if (dog.gem) {
+      if (dog.gem.dead || Math.hypot(dog.gem.x - h.x, dog.gem.y - h.y) > dogCfg.radius + 40) {
+        dog.tx = dog.ty = null; dog.gem = null;
+      } else {
+        dog.tx = dog.gem.x; dog.ty = dog.gem.y;
+      }
+    }
+    if (dog.tx !== null && dogMoveTo(dog.tx, dog.ty, dt)) {
+      if (dog.gem) {
+        if (!dog.gem.dead) { dog.gem.dead = true; collectGemByDog(dog.gem); }
+        dog.gem = null;
+      } else if (dog.looting) {
+        dog.looting = false;
+        dog.lootWait = 14;
+        dogLoot();
+      }
+      dog.tx = dog.ty = null;
+    }
+    return;
+  }
+  // 没目标: 先回窝, 到家后才寻找下一个工作
+  const dh = Math.hypot(h.x - dog.x, h.y - dog.y);
+  if (dh > 8) { dogMoveTo(h.x, h.y, dt); return; }
+  dog.x = h.x; dog.y = h.y;
+  if (dogCfg.mode === 'loot') {
+    dog.lootWait = Math.max(0, dog.lootWait - dt);
+    if (dog.lootWait <= 0) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = 30 + Math.random() * dogCfg.radius;
+      const p = clampEntityToWorld(h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr);
+      dog.tx = p.x; dog.ty = p.y; dog.looting = true;
+    }
+  } else if (gems.length) {
+    let best = null, bd = dogCfg.radius;
+    for (const g of gems) {
+      const d = Math.hypot(g.x - h.x, g.y - h.y);
+      if (d < bd) { bd = d; best = g; }
+    }
+    if (best) { dog.gem = best; dog.tx = best.x; dog.ty = best.y; }
+  }
+}
+
+document.getElementById('dogfeed').addEventListener('click', feedDog);
+document.getElementById('dogclose').addEventListener('click', closeDog);
+document.getElementById('dogmodeexp').addEventListener('click', () => setDogMode('exp'));
+document.getElementById('dogmodeloot').addEventListener('click', () => setDogMode('loot'));
+document.getElementById('dogradius').addEventListener('input', (e) => {
+  dogCfg.radius = Math.max(80, Math.min(420, Math.floor(Number(e.target.value))));
+  $('dogradiusv').textContent = dogCfg.radius + 'px';
+  saveDirty = true;
+});
+document.getElementById('dogspeed').addEventListener('input', (e) => {
+  dogCfg.speed = Math.max(40, Math.min(140, Math.floor(Number(e.target.value))));
+  $('dogspeedv').textContent = dogCfg.speed;
+  saveDirty = true;
+});
 
 // ===== 存档 v4 (localStorage, 兼容 v1/v2/v3 旧档) =====
 // v4: 地块数量可增长 (不再固定 9 块); 旧档迁移前按版本备份原文.
@@ -1507,6 +1817,14 @@ function saveGame() {
       produce: produce.slice(),
       // 猫: 猫粮库存 + 四组优先级设置 + 加速剩余时长 (可选字段, 旧档缺省按默认)
       cat: { food: catFood, cfg: catCfg, feedT: catFeedT },
+      // 挖宝产出: 狗粮 + 按角色独立的技能点/饰品 (可选字段)
+      dogFood,
+      items: {
+        player: { sp: items.player.sp, acc: items.player.acc.slice() },
+        partner: { sp: items.partner.sp, acc: items.partner.acc.slice() },
+      },
+      // 狗任务设置 (可选字段)
+      dog: { mode: dogCfg.mode, radius: dogCfg.radius, speed: dogCfg.speed },
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
       // v3: 家园左上角世界坐标, 地块仍只存相对索引, 位置由它派生
       home: { x: home.x, y: home.y },
@@ -1612,6 +1930,12 @@ function loadGame() {
     catFeedT = (s.cat && isNum(s.cat.feedT)) ? Math.max(0, Math.min(CAT_FEED_SEC * 2, s.cat.feedT)) : 0;
     catCfg = sanitizeCatCfg(s.cat && s.cat.cfg);
     catTickT = CAT_BASE_TICK;
+    // 挖宝产出为后加可选字段: 旧档按空库存补齐; 冷却与软保底不跨读档保存
+    dogFood = isNum(s.dogFood) ? Math.max(0, Math.floor(s.dogFood)) : 0;
+    items = sanitizeRoleItems(s.items);
+    dogCfg = sanitizeDogCfg(s.dog);
+    digCD = { player: 0, partner: 0 };
+    digPity = { player: 0, partner: 0 };
     plots = loadedPlots;
     pendingStats = Object.keys(pStats).length ? pStats : null;
     pendingPartnerStats = Object.keys(paStats).length ? paStats : null;
@@ -2358,6 +2682,7 @@ function spawnGem(x, y, value) {
 function updateGems(dt) {
   const actors = getActors();
   for (const g of gems) {
+    if (g.dead) continue;   // 已被狗叼走/拾取, 避免同一颗宝石结算两次
     // 任一角色靠近都能吸附/拾取 (伙伴共享经验)
     let picker = null, pd = GEM_PICK_R;
     let magnet = null, md = GEM_MAGNET_R;
@@ -2531,6 +2856,8 @@ function reset(preserveProgress = false) {
     seeds = START_SEEDS.slice();
     produce = new Array(CROPS.length).fill(0);
     catFood = 2;
+    dogFood = 0;
+    items = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
   }
   shopOpen = false;
   $('shop').style.display = 'none';
@@ -2539,8 +2866,13 @@ function reset(preserveProgress = false) {
   $('team').style.display = 'none';
   catOpen = false;
   $('cat').style.display = 'none';
+  dogOpen = false;
+  $('dog').style.display = 'none';
+  resetDogState();
   catFeedT = 0;
   catTickT = CAT_BASE_TICK;
+  digCD = { player: 0, partner: 0 };
+  digPity = { player: 0, partner: 0 };
   spawnTimer = 0;
   deadTimer = 0;
   bossT = RHYTHM.bossNightDelay;
@@ -2716,7 +3048,7 @@ function loop(t) {
       writeLock();
     }
 
-    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'cat') {
+    if (gameState === 'paused' || gameState === 'menu' || gameState === 'title' || gameState === 'shop' || gameState === 'settle' || gameState === 'homemove' || gameState === 'team' || gameState === 'cat' || gameState === 'dog') {
       render();
       return;
     }
@@ -2785,6 +3117,14 @@ function loop(t) {
 
     if (player) player.update(dt);
     if (partner) partner.update(dt);
+    // 挖宝冷却; 伙伴白天空闲(站定)时自动就地挖, 不跑图
+    if (digCD.player > 0) digCD.player = Math.max(0, digCD.player - dt);
+    if (digCD.partner > 0) digCD.partner = Math.max(0, digCD.partner - dt);
+    if (phase === 'day' && partner && !partner.controlled && !partner.downed && partner.state === 'idle' && digCD.partner <= 0) {
+      digCD.partner = DIG_AUTO_CD;
+      doDig('partner', partner);
+    }
+    updateDog(dt);
     if (actionQueued) { actionQueued = false; farmAction(); }
     updateWeapons(dt);
 
@@ -2989,6 +3329,35 @@ function drawCat() {
   ctx.fillText(catFeedT > 0 ? '猫 · 加速中 (C)' : '猫 · 自动农场 (C)', sx, sy - top - 3);
 }
 
+// 狗: 待在家园旁, 只在搜索半径内跑动, 不参战/不可扮演
+function drawDog() {
+  const sx = Math.round(dog.x - camX), sy = Math.round(dog.y - camY);
+  if (sx < -40 || sx > LOGIC_W + 40 || sy < -40 || sy > LOGIC_H + 40) return;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 1, 8, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const tex = charTextures['dog'];
+  let top = 14;
+  if (tex && tex.down && tex.down.idle && tex.down.idle.length) {
+    const texDir = dog.tx !== null && tex.down.walk ? tex.down.walk : tex.down.idle;
+    const img = texDir[Math.floor(gameTime * (dog.tx !== null ? 6 : 3)) % texDir.length];
+    ctx.drawImage(img, sx - Math.floor(tex.frameW / 2), sy - tex.frameH);
+    top = tex.frameH;
+  } else {
+    ctx.fillStyle = '#b08a63';
+    ctx.fillRect(sx - 6, sy - 9, 12, 7);
+    ctx.fillRect(sx - 4, sy - 12, 3, 3);
+    ctx.fillRect(sx - 5, sy - 13, 3, 2);
+    ctx.fillRect(sx + 2, sy - 9, 4, 2);
+  }
+  ctx.textAlign = 'center';
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = dogFeedT > 0 ? '#ffd166' : '#cfd8b8';
+  const label = dogCfg.mode === 'loot' ? '狗 · 找战利品 (G)' : '狗 · 捡经验 (G)';
+  ctx.fillText(dogFeedT > 0 ? label + ' · 加速' : label, sx, sy - top - 3);
+}
+
 function render() {
   ctx.save();
   // 屏幕震动: 幅度随时长衰减
@@ -3018,6 +3387,8 @@ function render() {
   drawFarm();
   // 猫 NPC (在家园旁)
   drawCat();
+  // 狗 NPC (在家园另一侧)
+  drawDog();
 
   // 敌人
   for (const e of enemies) {
@@ -3421,7 +3792,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108102042 -->
-<script>window.__BUILD='20261108102042';</script>
+
+<!-- build:20261108105745 -->
+<script>window.__BUILD='20261108105745';</script>
 </body>
 </html>
