@@ -179,6 +179,21 @@
   .panel .msg { min-height: 18px; color: #ff8f6b; font-size: 11px; margin-top: 8px; text-align: center; }
   .panel .msg.ok { color: #9fe07a; }
   .panel .close { display: block; margin: 10px auto 0; }
+  #shop .panel { width: 560px; max-height: 88vh; overflow-y: auto; }
+  .shopsec { color: #ffd166; margin: 10px 0 2px; }
+  .goodsrow {
+    display: grid; grid-template-columns: 74px 1fr 62px 88px;
+    gap: 6px; align-items: center;
+    padding: 4px 0; border-top: 1px solid #2c3a4c;
+  }
+  .goodsrow .gdesc { color: #aab8c8; font-size: 10px; }
+  .sp { color: #ff8f6b; }
+  .autorow {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 4px 0; border-top: 1px solid #2c3a4c; color: #dfe8c8;
+  }
+  .autorow button.on { background: #2f5a3a; border-color: #9fe07a; color: #9fe07a; }
+  .autorow .n { min-width: 20px; text-align: center; color: #7df9ff; }
   .teamrow {
     display: grid; grid-template-columns: 1fr 64px 72px;
     gap: 8px; align-items: center;
@@ -228,7 +243,7 @@
   <div>成长: 技能点 <span id="sp">0</span> · 饰品 <span id="acc">0</span></div>
   <div>夜战击杀: <span id="nkills">0</span></div>
   <div id="homebtn" style="pointer-events:auto;cursor:pointer;color:#ffd166">在此安家 (H)</div>
-  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝 · G 狗 · 自动存档</div>
+  <div class="key">1-5 选种 · 空格 播种/收获 · B 商店 · C 猫 · F 挖宝 · G 狗 · E 宝箱 · 自动存档</div>
 </div>
 <div id="err"></div>
 <div id="levelup"></div>
@@ -259,9 +274,19 @@
   <div class="panel">
     <div class="ptitle">种子商店</div>
     <div class="coinline">金币: <span id="shopcoins">100</span> · 行情每日浮动</div>
+    <div class="coinline" id="shopsum"></div>
     <div class="shoprow"><span>地块</span><button id="buyplot">买地</button><span id="plotcount">共 9 块</span><span class="trend flat">扩张</span><span id="plotnext">下一块 50 金</span></div>
+    <div class="shopsec">种子 / 作物</div>
     <div class="shoprow head"><span>作物</span><span>买种子</span><span>持有</span><span>行情</span><span>卖出</span></div>
     <div id="shoprows"></div>
+    <div class="shopsec">饰品 / 消耗品 / 技能点 / 招募</div>
+    <div class="goodsrow head"><span>商品</span><span>效果</span><span>持有</span><span>购买</span></div>
+    <div id="goodsrows"></div>
+    <div class="shopsec">自动设置</div>
+    <div class="autorow">自动买消耗品 <button id="autobuy">关</button> 库存低于 <span class="n" id="autokeep">2</span> 份 <button id="autokeepminus">-</button><button id="autokeepup">+</button></div>
+    <div class="autorow">自动吃蛋糕 HP ≤ <button id="autocakepctminus">-</button><span class="n" id="autocakepct">60</span>% <button id="autocakepctup">+</button> <button id="autocake">关</button></div>
+    <div class="autorow">夜晚自动喝可乐 <button id="autocola">关</button></div>
+    <div class="autorow">招募角色（随机伙伴，保留等级与技能） <button id="recruit">招募 200金</button></div>
     <div id="shopmsg" class="msg"></div>
     <button id="shopclose" class="close">关闭（B / Esc）</button>
   </div>
@@ -475,6 +500,7 @@ let ebullets = [];   // 敌方弹幕
 let particles = [];
 let floats = [];
 let gems = [];
+let chests = [];    // Boss 战利品宝箱 (仅当前局存在, 不写档)
 let camX = 0, camY = 0;
 let gameTime = 0;
 let kills = 0;
@@ -525,6 +551,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'c') { if (gameState === 'playing' || catOpen) toggleCat(); return; }   // 猫的自动农场设置
   if (k === 'f') { if (gameState === 'playing') tryPlayerDig(); return; }   // 挖宝: 站原地即可, 白天黑夜不限
   if (k === 'g') { if (gameState === 'playing' || dogOpen) toggleDog(); return; }   // 狗的搜寻设置
+  if (k === 'e') { if (gameState === 'playing') openChest(); return; }   // 开启附近的 Boss 宝箱
   if (k === 'enter') {
     if (gameState === 'homemove') { confirmHomeMove(); return; }
     closeSettlement();
@@ -924,6 +951,67 @@ let seeds = START_SEEDS.slice();
 let produce = [0, 0, 0, 0, 0];
 let shopOpen = false;
 
+// ===== 商城商品 (饰品/消耗品/技能点) 与自动买/自动吃设置 =====
+const GOODS = [
+  { id: 'ring',     kind: 'acc',   name: '黄铜戒指', desc: '魅力 +3',        price: 120 },
+  { id: 'necklace', kind: 'acc',   name: '铜项链',   desc: '运气 +3',        price: 120 },
+  { id: 'clover',   kind: 'acc',   name: '四叶草',   desc: '魅力+1 运气+1',   price: 90 },
+  { id: 'cake',     kind: 'stock', name: '蛋糕',     desc: '立刻回血 35',     price: 30 },
+  { id: 'cola',     kind: 'stock', name: '可乐',     desc: '20s 移速 ×1.3',   price: 40 },
+  { id: 'sp',       kind: 'sp',    name: '技能点',   desc: '技能点 +1',       price: 160 },
+];
+const CAKE_HEAL = 35;
+const COLA_SEC = 20;
+const COLA_MUL = 1.3;
+const RECRUIT_COST = 200;
+let cakeStock = 0, colaStock = 0;
+let colaT = { player: 0, partner: 0 };   // 可乐加速剩余秒数 (按角色)
+const AUTO_DEFAULT = { buy: false, keep: 2, cake: true, pct: 60, cola: true };
+let autoCfg = { ...AUTO_DEFAULT };
+let autoTickT = 5;
+
+function charmOf(key) {
+  let n = 0;
+  for (const id of items[key].acc) {
+    const p = ACC_POOL.find((x) => x.id === id);
+    if (p) n += p.charm || 0;
+  }
+  return n;
+}
+// 魅力: 卖价每点 +3%, 买价每点 -1% (封顶 30%)
+function buyDiscount(key) {
+  return Math.min(0.3, charmOf(key) * 0.01);
+}
+function salePriceFor(i, key) {
+  return Math.max(1, Math.round(sellPrice(i) * (1 + charmOf(key) * 0.03)));
+}
+// 每日特价: 按 dayNumber 确定性地落在某一件商品/种子上, 打 8 折
+function specialSlot() {
+  return (dayNumber * 7 + 3) % (CROPS.length + GOODS.length);
+}
+function isSpecialSeed(i) { return specialSlot() === i; }
+function isSpecialGoods(i) { return specialSlot() === CROPS.length + i; }
+function seedPrice(i, key) {
+  let p = CROPS[i].cost * (1 - buyDiscount(key));
+  if (isSpecialSeed(i)) p *= 0.8;
+  return Math.max(1, Math.round(p));
+}
+function goodsPrice(g, key, i) {
+  let p = g.price * (1 - buyDiscount(key));
+  if (isSpecialGoods(i)) p *= 0.8;
+  return Math.max(1, Math.round(p));
+}
+function sanitizeAuto(raw) {
+  const d = { ...AUTO_DEFAULT };
+  if (!raw || typeof raw !== 'object') return d;
+  if (typeof raw.buy === 'boolean') d.buy = raw.buy;
+  if (isNum(raw.keep)) d.keep = Math.max(1, Math.min(5, Math.floor(raw.keep)));
+  if (typeof raw.cake === 'boolean') d.cake = raw.cake;
+  if (isNum(raw.pct)) d.pct = Math.max(20, Math.min(90, Math.floor(raw.pct)));
+  if (typeof raw.cola === 'boolean') d.cola = raw.cola;
+  return d;
+}
+
 function shopMsg(text, isErr) {
   const el = $('shopmsg');
   el.textContent = text;
@@ -931,18 +1019,48 @@ function shopMsg(text, isErr) {
 }
 
 function renderShop() {
+  const key = roleKey(activeChar);
   $('shopcoins').textContent = coins;
+  $('shopsum').textContent = '魅力 ' + charmOf(key) + '（卖价 +' + charmOf(key) * 3 + '%，买价 -' + buyDiscount(key) * 100 + '%）· 运气 ' + roleLuck(key);
   $('shoprows').innerHTML = CROPS.map((c, i) => {
     const t = priceTrend(i);
+    const sp = isSpecialSeed(i) ? ' <span class="sp">特价</span>' : '';
     return `
     <div class="shoprow">
       <span>${c.name}</span>
-      <button data-buy="${i}">买 ${c.cost}金</button>
+      <button data-buy="${i}">买 ${seedPrice(i, key)}金${sp}</button>
       <span>种 ${seeds[i]} / 收 ${produce[i]}</span>
       <span class="trend ${t.cls}">${t.arrow}${t.arrow === '=' ? '' : Math.abs(t.diff)}</span>
-      <span><button data-sell="${i}">卖1 ${t.now}金</button> <button data-sellall="${i}">全卖</button></span>
+      <span><button data-sell="${i}">卖1 ${salePriceFor(i, key)}金</button> <button data-sellall="${i}">全卖</button></span>
     </div>`;
   }).join('');
+  $('goodsrows').innerHTML = GOODS.map((g, i) => {
+    const p = goodsPrice(g, key, i);
+    const sp = isSpecialGoods(i) ? ' <span class="sp">特价</span>' : '';
+    let held = '';
+    if (g.kind === 'acc') held = '已持 ' + items[key].acc.filter((x) => x === g.id).length;
+    else if (g.id === 'cake') held = '持 ' + cakeStock;
+    else if (g.id === 'cola') held = '持 ' + colaStock;
+    else if (g.kind === 'sp') held = '技能点 ' + items[key].sp;
+    return `<div class="goodsrow">
+      <span>${g.name}</span>
+      <span class="gdesc">${g.desc}${sp}</span>
+      <span>${held}</span>
+      <button data-goods="${g.id}">买 ${p}金</button>
+    </div>`;
+  }).join('');
+  renderAuto();
+}
+function renderAuto() {
+  const bt = $('autobuy'), ca = $('autocake'), co = $('autocola');
+  bt.textContent = autoCfg.buy ? '开' : '关';
+  bt.classList.toggle('on', autoCfg.buy);
+  ca.textContent = autoCfg.cake ? '开' : '关';
+  ca.classList.toggle('on', autoCfg.cake);
+  co.textContent = autoCfg.cola ? '开' : '关';
+  co.classList.toggle('on', autoCfg.cola);
+  $('autokeep').textContent = autoCfg.keep;
+  $('autocakepct').textContent = autoCfg.pct;
 }
 
 function afterTrade() {
@@ -977,13 +1095,15 @@ function buyPlot() {
 
 function buySeed(i) {
   const c = CROPS[i];
-  if (coins < c.cost) {
-    shopMsg('金币不足: 买 ' + c.name + ' 种子需要 ' + c.cost + ' 金', true);
+  const key = roleKey(activeChar);
+  const p = seedPrice(i, key);
+  if (coins < p) {
+    shopMsg('金币不足: 买 ' + c.name + ' 种子需要 ' + p + ' 金', true);
     return;
   }
-  coins -= c.cost;
+  coins -= p;
   seeds[i]++;
-  shopMsg('买入 ' + c.name + ' 种子 -' + c.cost + ' 金', false);
+  shopMsg('买入 ' + c.name + ' 种子 -' + p + ' 金' + (isSpecialSeed(i) ? '（今日特价）' : ''), false);
   afterTrade();
 }
 
@@ -994,11 +1114,107 @@ function sellProduce(i, all) {
     shopMsg('没有可卖的 ' + c.name, true);
     return;
   }
-  const price = sellPrice(i);
+  const price = salePriceFor(i, roleKey(activeChar));
   produce[i] -= n;
   coins += price * n;
   shopMsg('卖出 ' + c.name + ' x' + n + ' @' + price + ' 金，+' + (price * n) + ' 金', false);
   afterTrade();
+}
+
+function buyGoods(id) {
+  const i = GOODS.findIndex((x) => x.id === id);
+  if (i < 0) return;
+  const g = GOODS[i];
+  const key = roleKey(activeChar);
+  const p = goodsPrice(g, key, i);
+  if (coins < p) {
+    shopMsg('金币不足：买 ' + g.name + ' 还差 ' + (p - coins) + ' 金', true);
+    return;
+  }
+  coins -= p;
+  if (g.kind === 'acc') {
+    items[key].acc.push(id);
+    const acc = ACC_POOL.find((x) => x.id === id);
+    shopMsg('买入 ' + (acc ? acc.name : id) + '（该角色已持 ' + items[key].acc.filter((x) => x === id).length + ' 件）', false);
+  } else if (g.kind === 'stock') {
+    if (id === 'cake') cakeStock++;
+    else colaStock++;
+    shopMsg('买入 ' + g.name + '，库存 ' + (id === 'cake' ? cakeStock : colaStock), false);
+  } else {
+    items[key].sp++;
+    shopMsg('技能点 +1（当前 ' + items[key].sp + ' 点）', false);
+  }
+  afterTrade();
+}
+
+function recruitPartner() {
+  if (coins < RECRUIT_COST) {
+    shopMsg('金币不足：招募需要 ' + RECRUIT_COST + ' 金', true);
+    return;
+  }
+  const pool = PARTNER_PREF.filter((n) => charTextures[n] && n !== usingChar);
+  if (!pool.length) {
+    shopMsg('没有可招募的角色', true);
+    return;
+  }
+  let n = pool[Math.floor(Math.random() * pool.length)];
+  if (pool.length > 1) {
+    for (let guard = 0; guard < 10 && n === partnerChar; guard++) n = pool[Math.floor(Math.random() * pool.length)];
+  }
+  coins -= RECRUIT_COST;
+  if (activeChar === partner) setControlled(player);   // 招募时先把控制权切回玩家
+  partnerChar = n;
+  partner.tex = charTextures[n] || null;
+  shopMsg('招募成功：' + (CHAR_NAMES[n] || n) + ' 加入队伍（等级与技能保留）', false);
+  renderTeam();
+  updateFarmHud();
+  saveGame();
+  renderShop();
+}
+
+// 自动买 / 自动吃: 每帧推进可乐计时, 每 5s 检查消耗品库存
+function autoHousekeeping(dt) {
+  for (const k of ['player', 'partner']) {
+    if (colaT[k] > 0) colaT[k] = Math.max(0, colaT[k] - dt);
+  }
+  if (autoCfg.cake && cakeStock > 0) {
+    const a = activeChar || player;
+    if (a && a.hp < a.maxHp * (autoCfg.pct / 100)) {
+      cakeStock--;
+      a.hp = Math.min(a.maxHp, a.hp + CAKE_HEAL);
+      popText(a.x, a.y - 38, '自动蛋糕 +' + CAKE_HEAL, '#9fe07a', 11);
+      saveDirty = true;
+      saveGame();
+      if (shopOpen) renderShop();
+    }
+  }
+  autoTickT -= dt;
+  if (autoTickT > 0) return;
+  autoTickT = 5;
+  if (!autoCfg.buy) return;
+  const key = roleKey(activeChar);
+  const cakeI = GOODS.findIndex((g) => g.id === 'cake');
+  const colaI = GOODS.findIndex((g) => g.id === 'cola');
+  let changed = false;
+  while (cakeStock < autoCfg.keep) {
+    const p = goodsPrice(GOODS[cakeI], key, cakeI);
+    if (coins < p + 20) break;
+    coins -= p;
+    cakeStock++;
+    changed = true;
+  }
+  while (colaStock < autoCfg.keep) {
+    const p = goodsPrice(GOODS[colaI], key, colaI);
+    if (coins < p + 20) break;
+    coins -= p;
+    colaStock++;
+    changed = true;
+  }
+  if (changed) {
+    saveDirty = true;
+    saveGame();
+    if (shopOpen) renderShop();
+  }
 }
 
 function openShop() {
@@ -1033,6 +1249,19 @@ document.getElementById('shoprows').addEventListener('click', (e) => {
   else if (b.dataset.sell !== undefined) sellProduce(Number(b.dataset.sell), false);
   else if (b.dataset.sellall !== undefined) sellProduce(Number(b.dataset.sellall), true);
 });
+document.getElementById('goodsrows').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b && b.dataset.goods) buyGoods(b.dataset.goods);
+});
+// 自动设置: 改动即生效并落盘
+document.getElementById('autobuy').addEventListener('click', () => { autoCfg.buy = !autoCfg.buy; renderAuto(); saveGame(); });
+document.getElementById('autocake').addEventListener('click', () => { autoCfg.cake = !autoCfg.cake; renderAuto(); saveGame(); });
+document.getElementById('autocola').addEventListener('click', () => { autoCfg.cola = !autoCfg.cola; renderAuto(); saveGame(); });
+document.getElementById('autokeepminus').addEventListener('click', () => { autoCfg.keep = Math.max(1, autoCfg.keep - 1); renderAuto(); saveGame(); });
+document.getElementById('autokeepup').addEventListener('click', () => { autoCfg.keep = Math.min(5, autoCfg.keep + 1); renderAuto(); saveGame(); });
+document.getElementById('autocakepctminus').addEventListener('click', () => { autoCfg.pct = Math.max(20, autoCfg.pct - 10); renderAuto(); saveGame(); });
+document.getElementById('autocakepctup').addEventListener('click', () => { autoCfg.pct = Math.min(90, autoCfg.pct + 10); renderAuto(); saveGame(); });
+document.getElementById('recruit').addEventListener('click', recruitPartner);
 document.getElementById('shopclose').addEventListener('click', closeShop);
 document.getElementById('buyplot').addEventListener('click', buyPlot);
 document.getElementById('settleok').addEventListener('click', closeSettlement);
@@ -1066,6 +1295,16 @@ function startNight() {
   nightKills = 0;
   bossT = RHYTHM.bossNightDelay;   // 每夜一只 Boss, 入夜 36s 出现
   spawnTimer = 0;
+  // 自动喝可乐: 入夜时给当前扮演角色上 20s 移速 buff
+  if (autoCfg.cola && colaStock > 0) {
+    const k = roleKey(activeChar || player);
+    if (colaT[k] <= 0) {
+      colaStock--;
+      colaT[k] = COLA_SEC;
+      const me = activeChar || player;
+      popText(me.x, me.y - 42, '可乐 · 移速提升', '#7df9ff', 11);
+    }
+  }
   popText((activeChar || player).x, (activeChar || player).y - 46, '夜幕降临 · 敌人来袭', '#ff9f6b', 15);
   addShake(0.25, 3);
   saveDirty = true;
@@ -1696,13 +1935,8 @@ function dogLoot() {
   saveDirty = true;
 }
 function collectGemByDog(g) {
-  if (g.kind === 'rare') {
-    const a = activeChar || player;
-    if (a) applyRandomUpgrade(a);
-  } else {
-    const ups = gainXp(g.value);
-    if (ups > 0) enqueueUps(ups);
-  }
+  const ups = gainXp(g.value);
+  if (ups > 0) enqueueUps(ups);
   popText(g.x, g.y - 10, '+' + g.value, '#7df9ff', 9);
 }
 function updateDog(dt) {
@@ -1825,6 +2059,9 @@ function saveGame() {
       },
       // 狗任务设置 (可选字段)
       dog: { mode: dogCfg.mode, radius: dogCfg.radius, speed: dogCfg.speed },
+      // 消耗品库存 + 自动买/自动吃阈值 (可选字段, 旧档默认空库存/自动买关闭)
+      stock: { cake: cakeStock, cola: colaStock },
+      auto: { buy: autoCfg.buy, keep: autoCfg.keep, cake: autoCfg.cake, pct: autoCfg.pct, cola: autoCfg.cola },
       plots: plots.map((p) => ({ state: p.state, crop: p.crop, start: p.start })),
       // v3: 家园左上角世界坐标, 地块仍只存相对索引, 位置由它派生
       home: { x: home.x, y: home.y },
@@ -1934,6 +2171,9 @@ function loadGame() {
     dogFood = isNum(s.dogFood) ? Math.max(0, Math.floor(s.dogFood)) : 0;
     items = sanitizeRoleItems(s.items);
     dogCfg = sanitizeDogCfg(s.dog);
+    cakeStock = (s.stock && isNum(s.stock.cake)) ? Math.max(0, Math.floor(s.stock.cake)) : 0;
+    colaStock = (s.stock && isNum(s.stock.cola)) ? Math.max(0, Math.floor(s.stock.cola)) : 0;
+    autoCfg = sanitizeAuto(s.auto);
     digCD = { player: 0, partner: 0 };
     digPity = { player: 0, partner: 0 };
     plots = loadedPlots;
@@ -2235,8 +2475,9 @@ class Actor {
     const moving = Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01;
 
     if (moving) {
-      this.x += dx * this.speed * dt;
-      this.y += dy * this.speed * dt;
+      const spd = this.speed * (colaT[roleKey(this)] > 0 ? COLA_MUL : 1);
+      this.x += dx * spd * dt;
+      this.y += dy * spd * dt;
       this.x = Math.max(20, Math.min(WORLD_W - 20, this.x));
       this.y = Math.max(30, Math.min(WORLD_H - 10, this.y));
       if (this.atkAnim <= 0) {
@@ -2526,7 +2767,9 @@ function killEnemy(e) {
   if (e.kind !== 'boss') popText(e.x, e.y, '击杀', '#ffd166', 11);
   spawnGem(e.x, e.y, e.xp);
   if (e.kind === 'boss') {
-    spawnRareGem(e.x + 14, e.y);
+    // 战利品宝箱: 饰品箱 + 技能箱, 玩家靠近按 E 开 (取代旧的金色稀有宝石)
+    spawnChest(e.x - 20, e.y + 8, 'acc');
+    spawnChest(e.x + 20, e.y + 8, 'skill');
     addShake(0.35, 5);
     popText(e.x, e.y - 30, 'BOSS 击破!', '#ffd166', 16);
   }
@@ -2545,18 +2788,89 @@ function weaponHit(e, base, burstN) {
   popText(e.x, e.y - e.size * 2 - 4, String(dmg), crit ? '#ffb020' : '#ffffff', crit ? 13 : 9);
   if (e.hp <= 0) killEnemy(e);
 }
-// 稀有宝石: boss 掉落, 拾取直接获得随机增益
-function spawnRareGem(x, y) {
-  gems.push(clampGem({ x, y, value: 0, kind: 'rare', bob: 0, vx: 0, vy: 0 }));
+// ===== Boss 战利品宝箱: 击败后掉落, 靠近按 E 开启, 奖励归当前扮演角色 =====
+const CHEST_OPEN_R = 40;
+const CHEST_TYPES = {
+  acc:   { name: '饰品宝箱', color: '#ffd166' },
+  skill: { name: '技能宝箱', color: '#7df9ff' },
+};
+function spawnChest(x, y, kind) {
+  const c = clampEntityToWorld(x, y);
+  chests.push({ x: c.x, y: c.y, kind, bob: Math.random() * Math.PI * 2 });
 }
-function applyRandomUpgrade(actor) {
-  const a = actor || player;
-  const pool = upgradePool(a);
-  const c = pool[Math.floor(Math.random() * pool.length)];
-  applyUpgrade(c, a);
-  popText(a.x, a.y - 34, '稀有增益: ' + c.name, '#ffd166', 12);
-  updateHud();
+function nearestChest(maxD) {
+  let best = null, bd = maxD;
+  const me = activeChar || player;
+  if (!me) return null;
+  for (const c of chests) {
+    const d = Math.hypot(c.x - me.x, c.y - me.y);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+function openChest() {
+  const actor = activeChar || player;
+  if (!actor) return;
+  const c = nearestChest(CHEST_OPEN_R);
+  if (!c) {
+    popText(actor.x, actor.y - 30, '附近没有宝箱', '#8899aa', 9);
+    return;
+  }
+  const key = roleKey(actor);
+  if (c.kind === 'acc') {
+    const acc = ACC_POOL[Math.floor(Math.random() * ACC_POOL.length)];
+    items[key].acc.push(acc.id);
+    popText(actor.x, actor.y - 34, '宝箱: 饰品「' + acc.name + '」', '#ffd166', 12);
+  } else {
+    const pool = upgradePool(actor);
+    const card = pool[Math.floor(Math.random() * pool.length)];
+    applyUpgrade(card, actor);
+    popText(actor.x, actor.y - 34, '宝箱: 技能「' + card.name + '」', '#ffd166', 12);
+    updateHud();
+  }
+  chests = chests.filter((x) => x !== c);
+  burst(c.x, c.y, CHEST_TYPES[c.kind].color, 10);
+  addShake(0.18, 2);
+  updateFarmHud();
   saveGame();
+}
+// 宝箱实体: 木箱 + 金边, 按类型在箱面画戒指/星形图标
+function drawChests() {
+  for (const c of chests) {
+    const sx = Math.round(c.x - camX), sy = Math.round(c.y - camY + Math.sin(c.bob) * 1.5);
+    if (sx < -40 || sx > LOGIC_W + 40 || sy < -40 || sy > LOGIC_H + 40) continue;
+    const t = CHEST_TYPES[c.kind];
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 8, 10, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#8a5a2a';
+    ctx.fillRect(sx - 9, sy - 6, 18, 14);
+    ctx.fillStyle = '#a86f38';
+    ctx.fillRect(sx - 9, sy - 11, 18, 6);
+    ctx.strokeStyle = '#ffcf5c';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx - 9.5, sy - 11.5, 19, 20);
+    ctx.fillStyle = t.color;
+    if (c.kind === 'acc') {
+      ctx.beginPath();
+      ctx.arc(sx, sy + 1, 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = t.color;
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 4);
+      ctx.lineTo(sx + 3, sy + 1);
+      ctx.lineTo(sx, sy + 6);
+      ctx.lineTo(sx - 3, sy + 1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.font = '9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = t.color;
+    ctx.fillText('E 开启 · ' + t.name, sx, sy - 15);
+  }
 }
 function nearestEnemyTo(x, y, maxD) {
   let best = null, bd = maxD;
@@ -2692,14 +3006,10 @@ function updateGems(dt) {
     }
     if (picker) {
       g.dead = true;
-      if (g.kind === 'rare') {
-        applyRandomUpgrade(picker);   // 稀有宝石: 直接给拾取者增益, 不加经验
-      } else {
-        // 攒满经验则进入串行升级队列 (伙伴自动选卡, 玩家弹卡)
-        const ups = gainXp(g.value);
-        if (ups > 0) enqueueUps(ups);
-        popText(g.x, g.y - 10, '+' + g.value, '#7df9ff');
-      }
+      // 攒满经验则进入串行升级队列 (伙伴自动选卡, 玩家弹卡)
+      const ups = gainXp(g.value);
+      if (ups > 0) enqueueUps(ups);
+      popText(g.x, g.y - 10, '+' + g.value, '#7df9ff');
     } else if (magnet) {
       // 越近吸得越快
       const dx = magnet.x - g.x, dy = magnet.y - g.y;
@@ -2833,6 +3143,7 @@ function reset(preserveProgress = false) {
   particles = [];
   floats = [];
   gems = [];
+  chests = [];
   gameTime = 0;
   kills = 0;
   knifeAngle = 0; boomT = 0; laserT = 0;
@@ -2856,9 +3167,14 @@ function reset(preserveProgress = false) {
     produce = new Array(CROPS.length).fill(0);
     catFood = 2;
     dogFood = 0;
+    cakeStock = 0;
+    colaStock = 0;
+    autoCfg = { ...AUTO_DEFAULT };
     items = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
   }
   shopOpen = false;
+  colaT = { player: 0, partner: 0 };
+  autoTickT = 5;
   $('shop').style.display = 'none';
   $('settle').style.display = 'none';
   teamOpen = false;
@@ -3124,6 +3440,7 @@ function loop(t) {
       doDig('partner', partner);
     }
     updateDog(dt);
+    autoHousekeeping(dt);
     if (actionQueued) { actionQueued = false; farmAction(); }
     updateWeapons(dt);
 
@@ -3421,10 +3738,8 @@ function drawNightLighting() {
   // 敌方弹幕: 微弱紫光, 让夜里的来袭方向可见
   for (const b of ebullets) punchLight(lc, b.x - camX, b.y - camY, 22, 0.3);
 
-  // 稀有宝石微光, 便于夜里发现
-  for (const g of gems) {
-    if (g.kind === 'rare') punchLight(lc, g.x - camX, g.y - camY, 30, 0.35);
-  }
+  // 宝箱微光, 夜里也能看清
+  for (const c of chests) punchLight(lc, c.x - camX, c.y - camY, 46, 0.45);
 
   ctx.drawImage(lightCv, 0, 0);
 }
@@ -3460,6 +3775,8 @@ function render() {
   drawCat();
   // 狗 NPC (在家园另一侧)
   drawDog();
+  // Boss 战利品宝箱
+  drawChests();
 
   // 敌人
   for (const e of enemies) {
@@ -3500,12 +3817,11 @@ function render() {
     }
   }
 
-  // 经验宝石: 青色菱形, 上下浮动, 价值越高越大; 稀有宝石金色更大
+  // 经验宝石: 青色菱形, 上下浮动, 价值越高越大
   for (const g of gems) {
     const sx = g.x - camX, sy = g.y - camY + Math.sin(g.bob) * 2;
-    const rare = g.kind === 'rare';
-    const r = rare ? 8 : Math.min(6, 2.5 + g.value * 0.4);
-    ctx.fillStyle = rare ? '#ffd166' : '#7df9ff';
+    const r = Math.min(6, 2.5 + g.value * 0.4);
+    ctx.fillStyle = '#7df9ff';
     ctx.beginPath();
     ctx.moveTo(sx, sy - r);
     ctx.lineTo(sx + r * 0.7, sy);
@@ -3862,7 +4178,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108111208 -->
-<script>window.__BUILD='20261108111208';</script>
+
+<!-- build:20261108111918 -->
+<script>window.__BUILD='20261108111918';</script>
 </body>
 </html>
