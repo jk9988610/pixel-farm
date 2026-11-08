@@ -3214,6 +3214,7 @@ class Actor {
             vx: Math.cos(a) * this.projSpeed,
             vy: Math.sin(a) * this.projSpeed,
             dmg: this.dmg * passiveDmgMul(this), life: 1.5, pierce: this.pierce, hits: null, dead: false, owner: this,
+            fx: this.role === 'partner' ? 'blue' : 'red',
           });
         }
         this.atkTimer = this.atkSpeed * passiveAtkMul(this);
@@ -3457,6 +3458,20 @@ function spawnBoss() {
 }
 
 // ===== 武器系统 (基础子弹之外: 环绕飞刀/回旋镖/激光, 经升级卡获得) =====
+// 技能光效统一调色板: 火红 / 冰蓝 / 回旋白 / 飞刀绿 / 敌弹紫 / Boss 橙
+const FX_COLORS = { white: '#ffffff', red: '#ff5a3c', blue: '#6bc8ff', green: '#7dff9b', purple: '#c27dff', orange: '#ffa43c' };
+const FX_RGB = { white: '255,255,255', red: '255,90,60', blue: '107,200,255', green: '125,255,155', purple: '194,125,255', orange: '255,164,60' };
+function fxGlow(x, y, r, key, a) {
+  if (x < -r || x > LOGIC_W + r || y < -r || y > LOGIC_H + r) return;
+  const rgb = FX_RGB[key] || FX_RGB.white;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')');
+  g.addColorStop(1, 'rgba(' + rgb + ',0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
 let knifeAngle = 0;
 let boomT = 0, laserT = 0;
 let booms = [];   // 回旋镖
@@ -4205,7 +4220,7 @@ function loop(t) {
           e.shootT = 5;
           for (let i = 0; i < 8; i++) {
             const a = i * Math.PI / 4;
-            ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110, dmg: e.dmg, life: 4, dead: false });
+            ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 110, vy: Math.sin(a) * 110, dmg: e.dmg, life: 4, dead: false, fx: 'orange' });
           }
         }
         e.chargeT -= dt;
@@ -4237,7 +4252,7 @@ function loop(t) {
         e.shootT -= dt;
         if (e.shootT <= 0 && d < 260) {
           e.shootT = 2.2;
-          ebullets.push({ x: e.x, y: e.y, vx: dx / d * 130, vy: dy / d * 130, dmg: e.dmg, life: 3, dead: false });
+          ebullets.push({ x: e.x, y: e.y, vx: dx / d * 130, vy: dy / d * 130, dmg: e.dmg, life: 3, dead: false, fx: 'purple' });
         }
       } else {
         // chase / splitter: 直线追击
@@ -4472,6 +4487,28 @@ function drawNightLighting() {
   for (const c of chests) punchLight(lc, c.x - camX, c.y - camY, 46, 0.45);
 
   ctx.drawImage(lightCv, 0, 0);
+
+  // 彩色辉光叠加在夜色之上: 技能色不会被暗幕吃掉
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of bullets) fxGlow(b.x - camX, b.y - camY, 26, b.fx === 'blue' ? 'blue' : 'red', 0.3);
+  for (const b of booms) fxGlow(b.x - camX, b.y - camY, 34, 'white', 0.32);
+  if (player && player.knives > 0) {
+    for (let i = 0; i < player.knives; i++) {
+      const [kx, ky] = knifePos(i, player.knives);
+      fxGlow(kx - camX, ky - camY, 18, 'green', 0.22);
+    }
+  }
+  for (const b of ebullets) fxGlow(b.x - camX, b.y - camY, 20, b.fx === 'orange' ? 'orange' : 'purple', 0.22);
+  for (const bm of beams) {
+    const k = bm.ttl / bm.max;
+    const dx = bm.x2 - bm.x1, dy = bm.y2 - bm.y1;
+    const n = Math.min(6, Math.max(1, Math.floor(Math.hypot(dx, dy) / 60)));
+    for (let i = 0; i <= n; i++) {
+      fxGlow(bm.x1 + dx * i / n - camX, bm.y1 + dy * i / n - camY, 24, 'blue', 0.25 * k);
+    }
+  }
+  ctx.restore();
 }
 
 function render() {
@@ -4565,18 +4602,26 @@ function render() {
     ctx.fillRect(sx - 1, sy - r * 0.5, 1.5, 1.5);
   }
 
-  // 子弹
+  // 子弹: 玩家火球红光 / 伙伴冰球蓝光, 彩色辉光叠加 + 白芯
   for (const b of bullets) {
     const sx = b.x - camX, sy = b.y - camY;
-    ctx.fillStyle = '#ffd166';
+    const fx = b.fx === 'blue' ? 'blue' : 'red';
+    fxGlow(sx, sy, 9, fx, 0.35);
+    ctx.fillStyle = FX_COLORS[fx];
     ctx.beginPath();
-    ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+    ctx.arc(sx, sy, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.1, 0, Math.PI * 2);
     ctx.fill();
   }
-  // 敌方弹幕: 紫色圆点带白芯
+  // 敌方弹幕: 普通紫色, Boss 橙色, 白芯
   for (const b of ebullets) {
     const sx = b.x - camX, sy = b.y - camY;
-    ctx.fillStyle = '#c080ff';
+    const fx = b.fx === 'orange' ? 'orange' : 'purple';
+    fxGlow(sx, sy, 8, fx, 0.28);
+    ctx.fillStyle = FX_COLORS[fx];
     ctx.beginPath();
     ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
     ctx.fill();
@@ -4638,32 +4683,40 @@ function render() {
     for (let i = 0; i < player.knives; i++) {
       const [kx, ky] = knifePos(i, player.knives);
       const sx = kx - camX, sy = ky - camY;
+      fxGlow(sx, sy, 9, 'green', 0.28);
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate(knifeAngle * 2 + i);
-      ctx.fillStyle = '#dfe8f0';
+      ctx.fillStyle = '#7dff9b';
       ctx.fillRect(-1.5, -5, 3, 10);
       ctx.restore();
     }
   }
 
-  // 回旋镖: 黄色旋转月牙
+  // 回旋镖: 白色旋转月牙
   for (const b of booms) {
     const sx = b.x - camX, sy = b.y - camY;
+    fxGlow(sx, sy, 14, 'white', 0.4);
     ctx.save();
     ctx.translate(sx, sy);
     ctx.rotate(b.spin);
-    ctx.fillStyle = '#ffd94d';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(-5, -2, 10, 4);
     ctx.fillRect(-5, -2, 3, 7);
     ctx.restore();
   }
 
-  // 激光光束: 青色亮线快速淡出
+  // 激光光束: 冰蓝外层 + 白色高亮, 快速淡出
   for (const bm of beams) {
     ctx.globalAlpha = bm.ttl / bm.max;
-    ctx.strokeStyle = '#7df9ff';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(107,200,255,0.4)';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(bm.x1 - camX, bm.y1 - camY);
+    ctx.lineTo(bm.x2 - camX, bm.y2 - camY);
+    ctx.stroke();
+    ctx.strokeStyle = '#eaffff';
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(bm.x1 - camX, bm.y1 - camY);
     ctx.lineTo(bm.x2 - camX, bm.y2 - camY);
@@ -4919,7 +4972,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108134519 -->
-<script>window.__BUILD='20261108134519';</script>
+
+<!-- build:20261108135347 -->
+<script>window.__BUILD='20261108135347';</script>
 </body>
 </html>
