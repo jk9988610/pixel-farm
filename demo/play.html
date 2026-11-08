@@ -214,6 +214,7 @@
   .chatlog .cline.sys { color: #8899aa; }
   .chatopts { display: flex; gap: 8px; flex-wrap: wrap; }
   .teamrow button { min-width: 60px; }
+  .teamopt { grid-template-columns: 1fr auto !important; border-top: 0 !important; }
   .teamrow button:disabled { opacity: 0.5; cursor: default; }
   .catpanel { width: 540px; max-height: 82vh; overflow-y: auto; }
   .catsec { margin-top: 8px; }
@@ -336,6 +337,7 @@
   <div class="panel catpanel">
     <div class="ptitle">猫 · 自动农场</div>
     <div class="coinline">猫粮: <span id="catfood">2</span> · 下次行动: <span id="catnext">-</span> <button id="catfeed">喂 1 份猫粮</button></div>
+    <div class="dogrow"><span>任务</span><button id="cathome" data-place="home">回家</button><button id="catfollow" data-place="follow">跟随</button></div>
     <div id="catcfg"></div>
     <div class="msg" id="catmsg"></div>
     <button id="catclose" class="close">关闭（C / Esc）</button>
@@ -343,12 +345,12 @@
 </div>
 <div id="dog" class="overlay">
   <div class="panel dogpanel">
-    <div class="ptitle">狗 · 战利品搜寻</div>
+    <div class="ptitle">狗 · 拾取</div>
     <div class="coinline">狗粮: <span id="dogfood2">0</span> <button id="dogfeed">喂 1 份狗粮</button></div>
-    <div class="dogrow"><span>任务</span><button id="dogmodeexp" data-mode="exp">拾取经验</button><button id="dogmodeloot" data-mode="loot">寻找战利品</button></div>
+    <div class="dogrow"><span>任务</span><button id="dogplacehome" data-place="home">回家</button><button id="dogplacefollow" data-place="follow">跟随</button></div>
     <div class="dogrow"><span>搜索半径</span><input type="range" id="dogradius" min="80" max="420" step="10"><span id="dogradiusv">260px</span></div>
     <div class="dogrow"><span>移动速度</span><input type="range" id="dogspeed" min="40" max="140" step="5"><span id="dogspeedv">70</span></div>
-    <div class="msg" id="dogmsg">狗待在家园旁的窝里，只在搜索半径内工作，不跟随玩家跑图。</div>
+    <div class="msg" id="dogmsg">狗会把范围内的经验与掉落物都叼回来；可以留在家园附近，也可以跟着当前角色。</div>
     <button id="dogclose" class="close">关闭（G / Esc）</button>
   </div>
 </div>
@@ -1491,7 +1493,7 @@ function startDay() {
   let heal = 0;
   for (const a of getActors()) {
     const h = Math.min(a.maxHp - a.hp, Math.round(a.maxHp * 0.15));
-    a.hp += h;
+    a.hp = Math.round(Math.min(a.maxHp, a.hp + h));   // 回血保持整数
     if (a === player) heal = h;
   }
   phase = 'day';
@@ -1638,6 +1640,9 @@ let catFood = 2;              // 猫粮库存 (商城/挖宝产出, 本批先给
 let catFeedT = 0;             // 猫粮加速剩余秒数
 let catTickT = CAT_BASE_TICK; // 距下次自动行动
 let catOpen = false;
+let catTask = 'home';         // 回家=留在家园自动干活; 跟随=跟着当前角色
+const catState = { x: 0, y: 0, inited: false };
+const CAT_FOLLOW_SPEED = 90;
 
 function makeCatCfg() {
   const cfg = {};
@@ -1653,9 +1658,34 @@ function makeCatCfg() {
 }
 let catCfg = makeCatCfg();
 
-function catPos() {
-  // 猫窝固定在家园左侧, 随家园整体迁移, 不跟随玩家跑图
+function catHomePos() {
   return clampEntityToWorld(home.x - 24, home.y + farmH() - 6);
+}
+function catPos() {
+  if (!catState.inited) {
+    const h = catHomePos();
+    catState.x = h.x; catState.y = h.y;
+    catState.inited = true;
+  }
+  return { x: catState.x, y: catState.y };
+}
+function setCatTask(t) {
+  if (t !== 'home' && t !== 'follow') return;
+  catTask = t;
+  renderCat();
+  saveDirty = true;
+}
+function updateCat(dt) {
+  const p = catPos();
+  const target = (catTask === 'follow' && activeChar) ? { x: activeChar.x - 22, y: activeChar.y + 10 } : catHomePos();
+  const dx = target.x - p.x, dy = target.y - p.y, d = Math.hypot(dx, dy);
+  if (d > 8) {
+    const k = Math.min(1, d / 26);
+    catState.x += dx / d * CAT_FOLLOW_SPEED * k * dt;
+    catState.y += dy / d * CAT_FOLLOW_SPEED * k * dt;
+    catState.x = Math.max(24, Math.min(WORLD_W - 24, catState.x));
+    catState.y = Math.max(34, Math.min(WORLD_H - 14, catState.y));
+  }
 }
 
 function sanitizeCatCfg(raw) {
@@ -1680,6 +1710,7 @@ function catMsg(text, isErr) {
 }
 
 function catTickLabel() {
+  if (catTask === 'follow') return '跟随中（农场暂停）';
   const base = catFeedT > 0 ? CAT_FAST_TICK : CAT_BASE_TICK;
   return Math.ceil(Math.max(0, catTickT)) + 's（' + base + 's/次' + (catFeedT > 0 ? ' · 加速中 ' + Math.ceil(catFeedT) + 's' : '') + '）';
 }
@@ -1688,6 +1719,8 @@ function renderCat() {
   $('catfood').textContent = catFood;
   $('catnext').textContent = catTickLabel();
   $('catfeed').disabled = catFood <= 0;
+  $('cathome').className = catTask === 'home' ? 'on' : '';
+  $('catfollow').className = catTask === 'follow' ? 'on' : '';
   const box = $('catcfg');
   box.innerHTML = '';
   for (const s of CAT_SECTIONS) {
@@ -1837,6 +1870,8 @@ function catTick() {
 
 document.getElementById('catfeed').addEventListener('click', feedCat);
 document.getElementById('catclose').addEventListener('click', closeCat);
+document.getElementById('cathome').addEventListener('click', () => setCatTask('home'));
+document.getElementById('catfollow').addEventListener('click', () => setCatTask('follow'));
 document.getElementById('catcfg').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -1994,30 +2029,35 @@ function tryPlayerDig() {
 
 // ===== 狗 · 战利品搜寻 (G) =====
 // 狗待在家园旁的窝里, 只在搜索半径内工作, 不跟随玩家跑图; 任务二选一:
-// 'exp'  = 把范围内掉落的经验宝石叼回来(共享经验, 不参战)
-// 'loot' = 在半径内自己找地方嗅探, 产出小幅金币/猫狗粮, 低概率饰品
+// 狗只有一件事: 把活动范围内的经验/掉落物全部叼回来.
+// place='home' 留在家园旁; place='follow' 跟着当前受控角色.
 const DOG_FEED_SEC = 60;
-const DOG_BASE = { mode: 'exp', radius: 260, speed: 70 };
+const DOG_BASE = { radius: 260, speed: 70, place: 'home' };
 let dogCfg = { ...DOG_BASE };
 let dogOpen = false;
 let dogFeedT = 0;
 let dogInited = false;
-const dog = { x: 0, y: 0, tx: null, ty: null, gem: null, looting: false, lootWait: 0 };
+const dog = { x: 0, y: 0, tx: null, ty: null, gem: null };
 
 function dogHomePos() {
   return clampEntityToWorld(home.x + FARM_W + 22, home.y + farmH() - 8);
+}
+function dogCenter() {
+  if (dogCfg.place === 'follow' && activeChar) return { x: activeChar.x, y: activeChar.y };
+  return dogHomePos();
 }
 function resetDogState() {
   const h = dogHomePos();
   dog.x = h.x; dog.y = h.y;
   dog.tx = dog.ty = null; dog.gem = null;
-  dog.looting = false; dog.lootWait = 0; dogFeedT = 0;
+  dogFeedT = 0;
   dogInited = true;
 }
 function sanitizeDogCfg(raw) {
   const cfg = { ...DOG_BASE };
   if (!raw || typeof raw !== 'object') return cfg;
-  if (raw.mode === 'exp' || raw.mode === 'loot') cfg.mode = raw.mode;
+  // 旧档 mode 字段不再使用, 只迁移可复用的半径/速度
+  if (raw.place === 'follow' || raw.place === 'home') cfg.place = raw.place;
   if (isNum(raw.radius)) cfg.radius = Math.max(80, Math.min(420, Math.floor(raw.radius)));
   if (isNum(raw.speed)) cfg.speed = Math.max(40, Math.min(140, Math.floor(raw.speed)));
   return cfg;
@@ -2030,17 +2070,17 @@ function dogMsg(text, isErr) {
 function renderDog() {
   $('dogfood2').textContent = dogFood;
   $('dogfeed').disabled = dogFood <= 0;
-  $('dogmodeexp').className = dogCfg.mode === 'exp' ? 'on' : '';
-  $('dogmodeloot').className = dogCfg.mode === 'loot' ? 'on' : '';
+  $('dogplacehome').className = dogCfg.place === 'home' ? 'on' : '';
+  $('dogplacefollow').className = dogCfg.place === 'follow' ? 'on' : '';
   $('dogradius').value = dogCfg.radius;
   $('dogradiusv').textContent = dogCfg.radius + 'px';
   $('dogspeed').value = dogCfg.speed;
   $('dogspeedv').textContent = dogCfg.speed;
 }
-function setDogMode(m) {
-  if (m !== 'exp' && m !== 'loot') return;
-  dogCfg.mode = m;
-  dog.tx = dog.ty = null; dog.gem = null; dog.looting = false; dog.lootWait = 0;
+function setDogPlace(p) {
+  if (p !== 'home' && p !== 'follow') return;
+  dogCfg.place = p;
+  dog.tx = dog.ty = null; dog.gem = null;
   renderDog();
   saveDirty = true;
 }
@@ -2081,33 +2121,10 @@ function dogMoveTo(tx, ty, dt) {
   const d = Math.hypot(dx, dy);
   if (d < 6) return true;
   const sp = dogCfg.speed * (dogFeedT > 0 ? 1.6 : 1);
-  dog.x += dx / d * sp * dt;
-  dog.y += dy / d * sp * dt;
+  const k = Math.min(1, d / 24);   // 接近目标平滑减速, 不再抖动着急停
+  dog.x += dx / d * sp * k * dt;
+  dog.y += dy / d * sp * k * dt;
   return false;
-}
-function dogLoot() {
-  const r = Math.random();
-  let text = '', rare = false;
-  if (r < 0.05) {
-    const acc = ACC_POOL[Math.floor(Math.random() * ACC_POOL.length)];
-    items[roleKey(activeChar)].acc.push(acc.id);
-    text = '稀有饰品「' + acc.name + '」';
-    rare = true;
-  } else if (r < 0.27) {
-    dogFood++;
-    text = '狗粮 +1';
-  } else if (r < 0.47) {
-    catFood++;
-    text = '猫粮 +1';
-  } else {
-    const n = Math.round((5 + dayNumber) * (0.7 + Math.random() * 0.8));
-    coins += n;
-    text = '金币 +' + n;
-  }
-  popText(dog.x, dog.y - 30, '狗: ' + text, rare ? '#ffd166' : '#9fe07a', rare ? 11 : 9);
-  burst(dog.x, dog.y + 2, '#8a6a3a', 5);
-  updateFarmHud();
-  saveDirty = true;
 }
 function collectGemByDog(g) {
   const ups = gainXp(g.value);
@@ -2117,11 +2134,11 @@ function collectGemByDog(g) {
 function updateDog(dt) {
   if (!dogInited) resetDogState();
   if (dogFeedT > 0) dogFeedT = Math.max(0, dogFeedT - dt);
-  const h = dogHomePos();
+  const c = dogCenter();   // 回家=狗窝; 跟随=当前受控角色
   if (dog.tx !== null) {
-    // 经验目标可能被玩家吸走/耗尽, 超出搜索半径就放弃
+    // 目标可能被玩家吸走/耗尽, 超出活动半径就放弃
     if (dog.gem) {
-      if (dog.gem.dead || Math.hypot(dog.gem.x - h.x, dog.gem.y - h.y) > dogCfg.radius + 40) {
+      if (dog.gem.dead || Math.hypot(dog.gem.x - c.x, dog.gem.y - c.y) > dogCfg.radius + 40) {
         dog.tx = dog.ty = null; dog.gem = null;
       } else {
         dog.tx = dog.gem.x; dog.ty = dog.gem.y;
@@ -2131,41 +2148,28 @@ function updateDog(dt) {
       if (dog.gem) {
         if (!dog.gem.dead) { dog.gem.dead = true; collectGemByDog(dog.gem); }
         dog.gem = null;
-      } else if (dog.looting) {
-        dog.looting = false;
-        dog.lootWait = 14;
-        dogLoot();
       }
       dog.tx = dog.ty = null;
     }
     return;
   }
-  // 没目标: 先回窝, 到家后才寻找下一个工作
-  const dh = Math.hypot(h.x - dog.x, h.y - dog.y);
-  if (dh > 8) { dogMoveTo(h.x, h.y, dt); return; }
-  dog.x = h.x; dog.y = h.y;
-  if (dogCfg.mode === 'loot') {
-    dog.lootWait = Math.max(0, dog.lootWait - dt);
-    if (dog.lootWait <= 0) {
-      const a = Math.random() * Math.PI * 2;
-      const rr = 30 + Math.random() * dogCfg.radius;
-      const p = clampEntityToWorld(h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr);
-      dog.tx = p.x; dog.ty = p.y; dog.looting = true;
-    }
-  } else if (gems.length) {
-    let best = null, bd = dogCfg.radius;
-    for (const g of gems) {
-      const d = Math.hypot(g.x - h.x, g.y - h.y);
-      if (d < bd) { bd = d; best = g; }
-    }
-    if (best) { dog.gem = best; dog.tx = best.x; dog.ty = best.y; }
+  // 没目标: 先回到活动中心
+  const dh = Math.hypot(c.x - dog.x, c.y - dog.y);
+  if (dh > 30) { dogMoveTo(c.x, c.y, dt); return; }
+  // 范围内全部拾取: 找最近的掉落物(经验宝石)
+  let best = null, bd = dogCfg.radius;
+  for (const g of gems) {
+    if (g.dead) continue;
+    const d = Math.hypot(g.x - c.x, g.y - c.y);
+    if (d < bd) { bd = d; best = g; }
   }
+  if (best) { dog.gem = best; dog.tx = best.x; dog.ty = best.y; }
 }
 
 document.getElementById('dogfeed').addEventListener('click', feedDog);
 document.getElementById('dogclose').addEventListener('click', closeDog);
-document.getElementById('dogmodeexp').addEventListener('click', () => setDogMode('exp'));
-document.getElementById('dogmodeloot').addEventListener('click', () => setDogMode('loot'));
+document.getElementById('dogplacehome').addEventListener('click', () => setDogPlace('home'));
+document.getElementById('dogplacefollow').addEventListener('click', () => setDogPlace('follow'));
 document.getElementById('dogradius').addEventListener('input', (e) => {
   dogCfg.radius = Math.max(80, Math.min(420, Math.floor(Number(e.target.value))));
   $('dogradiusv').textContent = dogCfg.radius + 'px';
@@ -2191,6 +2195,7 @@ let pendingPartnerChar = null;    // 读档时伙伴角色素材
 let pendingPlayerChar = null;     // 读档时玩家角色素材
 let pendingActiveRole = null;     // 读档时受控角色
 let saveDirty = false;
+let hpBarOn = true;               // 非玩家角色头顶血条统一开关 (队伍面板可切换)
 let saveTimer = 0;
 let saveReady = false;
 let saveBlocked = false;          // 读档失败: 禁止自动存档, 避免覆盖原档
@@ -2224,16 +2229,16 @@ function saveGame() {
       dayNumber,
       seeds: seeds.slice(),
       produce: produce.slice(),
-      // 猫: 猫粮库存 + 四组优先级设置 + 加速剩余时长 (可选字段, 旧档缺省按默认)
-      cat: { food: catFood, cfg: catCfg, feedT: catFeedT },
+      // 猫: 猫粮库存 + 四组优先级设置 + 加速剩余时长 + 回家/跟随任务 (可选字段)
+      cat: { food: catFood, cfg: catCfg, feedT: catFeedT, task: catTask },
       // 挖宝产出: 狗粮 + 按角色独立的技能点/饰品 (可选字段)
       dogFood,
       items: {
         player: { sp: items.player.sp, acc: items.player.acc.slice() },
         partner: { sp: items.partner.sp, acc: items.partner.acc.slice() },
       },
-      // 狗任务设置 (可选字段)
-      dog: { mode: dogCfg.mode, radius: dogCfg.radius, speed: dogCfg.speed },
+      // 狗任务设置 (回家/跟随 + 半径 + 速度, 可选字段)
+      dog: { place: dogCfg.place, radius: dogCfg.radius, speed: dogCfg.speed },
       // 消耗品库存 + 自动买/自动吃阈值 (可选字段, 旧档默认空库存/自动买关闭)
       stock: { cake: cakeStock, cola: colaStock },
       auto: { buy: autoCfg.buy, keep: autoCfg.keep, cake: autoCfg.cake, pct: autoCfg.pct, cola: autoCfg.cola },
@@ -2247,6 +2252,8 @@ function saveGame() {
         partner: { char: partnerChar, stats: partner ? snapshotStats(partner) : (pendingPartnerStats || {}) },
       },
       activeRole: activeChar && activeChar.role === 'partner' ? 'partner' : 'player',
+      // 非玩家角色头顶血条统一开关 (旧档默认显示)
+      hpBar: hpBarOn,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     saveDirty = false;
@@ -2341,7 +2348,10 @@ function loadGame() {
     catFood = (s.cat && isNum(s.cat.food)) ? Math.max(0, Math.floor(s.cat.food)) : 2;
     catFeedT = (s.cat && isNum(s.cat.feedT)) ? Math.max(0, Math.min(CAT_FEED_SEC * 2, s.cat.feedT)) : 0;
     catCfg = sanitizeCatCfg(s.cat && s.cat.cfg);
+    catTask = (s.cat && s.cat.task === 'follow') ? 'follow' : 'home';
+    catState.inited = false;
     catTickT = CAT_BASE_TICK;
+    hpBarOn = (typeof s.hpBar === 'boolean') ? s.hpBar : true;
     // 挖宝产出为后加可选字段: 旧档按空库存补齐; 冷却与软保底不跨读档保存
     dogFood = isNum(s.dogFood) ? Math.max(0, Math.floor(s.dogFood)) : 0;
     items = sanitizeRoleItems(s.items);
@@ -2532,6 +2542,22 @@ function renderTeam() {
   const box = $('teamlist');
   if (!box) return;
   box.innerHTML = '';
+  // 统一开关: 非玩家角色头顶血条; 关闭时队伍列表里的 HP 行也一并隐藏
+  const opt = document.createElement('div');
+  opt.className = 'teamrow teamopt';
+  const optLab = document.createElement('div');
+  optLab.className = 'tname';
+  optLab.textContent = '头顶血条: ' + (hpBarOn ? '显示' : '隐藏');
+  const optBtn = document.createElement('button');
+  optBtn.textContent = hpBarOn ? '隐藏血条' : '显示血条';
+  optBtn.addEventListener('click', () => {
+    hpBarOn = !hpBarOn;
+    renderTeam();
+    saveDirty = true;
+  });
+  opt.appendChild(optLab);
+  opt.appendChild(optBtn);
+  box.appendChild(opt);
   const members = player ? [player, partner].filter(Boolean) : [];
   for (const a of members) {
     const row = document.createElement('div');
@@ -2542,7 +2568,7 @@ function renderTeam() {
     nm.textContent = charLabel(a) + (a === activeChar ? '（扮演中）' : '');
     const meta = document.createElement('div');
     meta.className = 'tmeta';
-    meta.textContent = 'HP ' + Math.max(0, Math.ceil(a.hp)) + '/' + a.maxHp + ' · ' + partnerTaskName(a);
+    meta.textContent = (hpBarOn ? 'HP ' + Math.max(0, Math.round(a.hp)) + '/' + a.maxHp + ' · ' : '') + partnerTaskName(a);
     const lore = CHAR_LORE[charOfActor(a)];
     const tl = document.createElement('div');
     tl.className = 'tlore';
@@ -2701,6 +2727,8 @@ class Actor {
     this.patrolSeed = Math.random() * Math.PI * 2;   // 巡逻相位, 多伙伴时不重叠
     this.x = WORLD_W / 2;
     this.y = WORLD_H / 2;
+    this.vx = 0;                     // 实际速度向量 (供跟随提前量使用)
+    this.vy = 0;
     this.maxHp = 100;
     this.hp = 100;
     this.speed = 80;
@@ -2746,11 +2774,14 @@ class Actor {
     // 受控角色读玩家输入, 其余角色走自动行为
     const [dx, dy] = this.controlled ? readMoveDir() : this.aiMoveDir();
     const moving = Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01;
+    this.vx = 0; this.vy = 0;
 
     if (moving) {
       const spd = this.speed * (colaT[roleKey(this)] > 0 ? COLA_MUL : 1) * passiveSpeedMul(this);
-      this.x += dx * spd * dt;
-      this.y += dy * spd * dt;
+      this.vx = dx * spd;
+      this.vy = dy * spd;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
       this.x = Math.max(20, Math.min(WORLD_W - 20, this.x));
       this.y = Math.max(30, Math.min(WORLD_H - 10, this.y));
       if (this.atkAnim <= 0) {
@@ -2841,9 +2872,21 @@ class Actor {
     }
     const lead = (activeChar && activeChar !== this) ? activeChar : player;
     if (lead && lead !== this) {
-      const dx = lead.x - this.x, dy = lead.y - this.y, l = Math.hypot(dx, dy) || 1;
-      if (l > FOLLOW_FAR) return [dx / l, dy / l];      // 太远才追
-      if (l < FOLLOW_NEAR) return [-dx / l, -dy / l];   // 太近退开, 避免和玩家重叠卡住
+      // 目标点带提前量: 按受控角色当前速度预测 0.25s, 避免贴到身后才追
+      const px = lead.x + (lead.vx || 0) * 0.25;
+      const py = lead.y + (lead.vy || 0) * 0.25;
+      const dx = px - this.x, dy = py - this.y, l = Math.hypot(dx, dy) || 1;
+      // 舒适区间内平滑减速, 不再到点急停/反复启停
+      if (l > FOLLOW_FAR) return [dx / l, dy / l];
+      if (l > FOLLOW_NEAR) {
+        const k = (l - FOLLOW_NEAR) / (FOLLOW_FAR - FOLLOW_NEAR);
+        return [dx / l * k, dy / l * k];
+      }
+      if (l < FOLLOW_NEAR - 12) {
+        const k = Math.min(1, (FOLLOW_NEAR - 12 - l) / 20);
+        return [-dx / l * k, -dy / l * k];
+      }
+      return [0, 0];
     }
     return [0, 0];
   }
@@ -2864,13 +2907,18 @@ class Actor {
     const ang = gameTime * 0.45 + this.patrolSeed;
     const tx = hc.x + Math.cos(ang) * 38;
     const ty = hc.y + Math.sin(ang) * 26;
-    if (Math.hypot(tx - this.x, ty - this.y) > 10) return dirTo(this, { x: tx, y: ty });
+    const d = Math.hypot(tx - this.x, ty - this.y);
+    if (d > 6) {
+      const k = Math.min(1, d / 24);   // 接近巡逻点平滑减速
+      return [(tx - this.x) / d * k, (ty - this.y) / d * k];
+    }
     return [0, 0];
   }
 
   takeDamage(dmg) {
     if (this.iframe > 0 || this.downed) return;
-    this.hp -= dmg * passiveDmgTakenMul(this);
+    // HP 全程整数: 减伤系数可能产生小数, 这里统一取整, 避免 0.5 血
+    this.hp = Math.max(0, Math.round(this.hp - Math.max(1, dmg * passiveDmgTakenMul(this))));
     this.iframe = 0.4;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -3373,7 +3421,7 @@ function reset(preserveProgress = false) {
     for (const k of PLAYER_STAT_KEYS) {
       if (isNum(stats[k])) player[k] = stats[k];
     }
-    if (savedStats) player.hp = Math.max(1, Math.min(player.maxHp, isNum(savedStats.hp) ? savedStats.hp : player.maxHp));
+    if (savedStats) player.hp = Math.round(Math.max(1, Math.min(player.maxHp, isNum(savedStats.hp) ? savedStats.hp : player.maxHp)));
     else if (prevStats) player.hp = player.maxHp;
   }
   pendingStats = null;
@@ -3392,7 +3440,7 @@ function reset(preserveProgress = false) {
       if (isNum(pStats[k])) partner[k] = pStats[k];
     }
     partner.hp = savedPStats
-      ? Math.max(1, Math.min(partner.maxHp, isNum(savedPStats.hp) ? savedPStats.hp : partner.maxHp))
+      ? Math.round(Math.max(1, Math.min(partner.maxHp, isNum(savedPStats.hp) ? savedPStats.hp : partner.maxHp)))
       : partner.maxHp;
   } else {
     partner.hp = partner.maxHp;
@@ -3445,6 +3493,8 @@ function reset(preserveProgress = false) {
     colaStock = 0;
     autoCfg = { ...AUTO_DEFAULT };
     items = { player: { sp: 0, acc: [] }, partner: { sp: 0, acc: [] } };
+    hpBarOn = true;
+    catTask = 'home';
   }
   shopOpen = false;
   colaT = { player: 0, partner: 0 };
@@ -3463,6 +3513,7 @@ function reset(preserveProgress = false) {
   resetDogState();
   catFeedT = 0;
   catTickT = CAT_BASE_TICK;
+  catState.inited = false;
   digCD = { player: 0, partner: 0 };
   digPity = { player: 0, partner: 0 };
   spawnTimer = 0;
@@ -3669,10 +3720,12 @@ function loop(t) {
     updateFarm(dt);
     // 猫的自动农场调度: 定时批量执行; 喂猫粮只缩短间隔, 不额外增加工作量
     if (catFeedT > 0) catFeedT -= dt;
-    catTickT -= dt;
-    if (catTickT <= 0) {
-      catTickT = catFeedT > 0 ? CAT_FAST_TICK : CAT_BASE_TICK;
-      catTick();
+    if (catTask === 'home') {
+      catTickT -= dt;
+      if (catTickT <= 0) {
+        catTickT = catFeedT > 0 ? CAT_FAST_TICK : CAT_BASE_TICK;
+        catTick();
+      }
     }
     saveTimer += dt;
     if (saveTimer >= 3) {
@@ -3716,6 +3769,7 @@ function loop(t) {
       digCD.partner = DIG_AUTO_CD;
       doDig('partner', partner);
     }
+    updateCat(dt);
     updateDog(dt);
     autoHousekeeping(dt);
     if (actionQueued) { actionQueued = false; farmAction(); }
@@ -3947,7 +4001,7 @@ function drawDog() {
   ctx.textAlign = 'center';
   ctx.font = '9px Courier New';
   ctx.fillStyle = dogFeedT > 0 ? '#ffd166' : '#cfd8b8';
-  const label = dogCfg.mode === 'loot' ? '狗 · 找战利品 (G)' : '狗 · 捡经验 (G)';
+  const label = dogCfg.place === 'follow' ? '狗 · 跟随拾取 (G)' : '狗 · 范围拾取 (G)';
   ctx.fillText(dogFeedT > 0 ? label + ' · 加速' : label, sx, sy - top - 3);
 }
 
@@ -4164,14 +4218,17 @@ function render() {
   if (player) player.draw();
   if (partner && !partner.downed) {
     partner.draw();
-    // 伙伴血条 (未满血时显示)
-    if (partner.hp < partner.maxHp) {
+    // 伙伴头顶血条: 由队伍面板统一开关控制
+    if (hpBarOn) {
       const sx = Math.round(partner.x - camX);
       const sy = Math.round(partner.y - camY) - 22;
       ctx.fillStyle = '#300';
       ctx.fillRect(sx - 9, sy, 18, 3);
       ctx.fillStyle = '#9fe07a';
       ctx.fillRect(sx - 9, sy, 18 * Math.max(0, partner.hp / partner.maxHp), 3);
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx - 9.5, sy - 0.5, 19, 4);
     }
   }
 
@@ -4459,7 +4516,8 @@ window.addEventListener('pagehide', () => {
 
 
 
-<!-- build:20261108114519 -->
-<script>window.__BUILD='20261108114519';</script>
+
+<!-- build:20261108115534 -->
+<script>window.__BUILD='20261108115534';</script>
 </body>
 </html>
